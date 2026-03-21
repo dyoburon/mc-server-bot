@@ -36,6 +36,17 @@ export class ConversationManager {
     return contents;
   }
 
+  /** Get all conversations for a specific bot, keyed by player name */
+  getAllConversations(botName: string): Record<string, ChatMessage[]> {
+    const botMap = this.histories.get(botName.toLowerCase());
+    if (!botMap) return {};
+    const result: Record<string, ChatMessage[]> = {};
+    for (const [player, messages] of botMap.entries()) {
+      result[player] = [...messages];
+    }
+    return result;
+  }
+
   clearBot(botName: string): void {
     this.histories.delete(botName.toLowerCase());
   }

@@ -107,6 +107,26 @@ export class VoyagerLoop {
     return this.paused;
   }
 
+  /** Get the current task description, or null if idle */
+  getCurrentTask(): string | null {
+    return this.currentTask;
+  }
+
+  /** Get list of completed task descriptions (proxied from CurriculumAgent) */
+  getCompletedTasks(): string[] {
+    return this.curriculumAgent.getCompletedTasks();
+  }
+
+  /** Get list of failed task descriptions (proxied from CurriculumAgent) */
+  getFailedTasks(): string[] {
+    return this.curriculumAgent.getFailedTasks();
+  }
+
+  /** Get the skill library instance */
+  getSkillLibrary(): SkillLibrary {
+    return this.skillLibrary;
+  }
+
   /** Returns a short summary of what the bot is currently doing, for chat context. */
   getInternalState(): string {
     const parts: string[] = [];

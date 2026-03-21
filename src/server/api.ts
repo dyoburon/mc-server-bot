@@ -1,10 +1,59 @@
 import express, { Request, Response } from 'express';
+import cors from 'cors';
+import http from 'http';
+import { Server as SocketIOServer } from 'socket.io';
 import { BotManager } from '../bot/BotManager';
+import { BotInstance } from '../bot/BotInstance';
+import { EventLog, BotEvent } from './EventLog';
 import { logger } from '../util/logger';
 
-export function createAPIServer(botManager: BotManager): express.Application {
+export interface APIServerResult {
+  app: express.Application;
+  httpServer: http.Server;
+  io: SocketIOServer;
+  eventLog: EventLog;
+}
+
+export function createAPIServer(botManager: BotManager): APIServerResult {
   const app = express();
+  const httpServer = http.createServer(app);
+
+  // CORS — allow the Next.js dev server and common local ports
+  app.use(cors({
+    origin: [
+      'http://localhost:3000',
+      'http://127.0.0.1:3000',
+      'http://localhost:3001',
+    ],
+    credentials: true,
+  }));
+
   app.use(express.json());
+
+  // Event log (in-memory circular buffer)
+  const eventLog = new EventLog(500);
+
+  // Socket.IO
+  const io = new SocketIOServer(httpServer, {
+    cors: {
+      origin: [
+        'http://localhost:3000',
+        'http://127.0.0.1:3000',
+      ],
+      methods: ['GET', 'POST'],
+    },
+  });
+
+  io.on('connection', (socket) => {
+    logger.info({ socketId: socket.id }, 'Dashboard client connected');
+    socket.on('disconnect', () => {
+      logger.info({ socketId: socket.id }, 'Dashboard client disconnected');
+    });
+  });
+
+  // ═══════════════════════════════════════
+  //  EXISTING ENDPOINTS (unchanged logic)
+  // ═══════════════════════════════════════
 
   // Health check
   app.get('/api/status', (_req: Request, res: Response) => {
@@ -14,13 +63,13 @@ export function createAPIServer(botManager: BotManager): express.Application {
     });
   });
 
-  // List all bots
+  // List all bots (basic status)
   app.get('/api/bots', (_req: Request, res: Response) => {
     const bots = botManager.getAllBots().map((b) => b.getStatus());
     res.json({ bots });
   });
 
-  // Get single bot
+  // Get single bot (basic)
   app.get('/api/bots/:name', (req: Request, res: Response) => {
     const bot = botManager.getBot(req.params.name as string);
     if (!bot) {
@@ -45,6 +94,10 @@ export function createAPIServer(botManager: BotManager): express.Application {
       return;
     }
 
+    const event = eventLog.push({ type: 'bot:spawn', botName: name, description: `${name} spawned` });
+    io.emit('bot:spawn', { bot: name });
+    io.emit('activity', event);
+
     res.status(201).json({ success: true, bot: bot.getStatus() });
   });
 
@@ -55,6 +108,12 @@ export function createAPIServer(botManager: BotManager): express.Application {
       res.status(404).json({ error: 'Bot not found' });
       return;
     }
+
+    const deletedName = req.params.name as string;
+    const event = eventLog.push({ type: 'bot:disconnect', botName: deletedName, description: `${deletedName} removed` });
+    io.emit('bot:disconnect', { bot: deletedName });
+    io.emit('activity', event);
+
     res.json({ success: true });
   });
 
@@ -91,7 +150,6 @@ export function createAPIServer(botManager: BotManager): express.Application {
       return;
     }
 
-    // Chat is handled directly by Mineflayer bot.on('chat') — this endpoint is for future relay use
     logger.info({ player: playerName, bot: nearestBot, message }, 'Chat event received');
     res.json({ handled: true });
   });
@@ -108,5 +166,208 @@ export function createAPIServer(botManager: BotManager): express.Application {
     res.json({ handled: true });
   });
 
-  return app;
+  // ═══════════════════════════════════════
+  //  NEW DASHBOARD ENDPOINTS
+  // ═══════════════════════════════════════
+
+  // Detailed bot status (enriched)
+  app.get('/api/bots/:name/detailed', (req: Request, res: Response) => {
+    const name = req.params.name as string;
+    const bot = botManager.getBot(name);
+    if (!bot) {
+      res.status(404).json({ error: 'Bot not found' });
+      return;
+    }
+    res.json({ bot: bot.getDetailedStatus() });
+  });
+
+  // Bot inventory
+  app.get('/api/bots/:name/inventory', (req: Request, res: Response) => {
+    const name = req.params.name as string;
+    const bot = botManager.getBot(name);
+    if (!bot) {
+      res.status(404).json({ error: 'Bot not found' });
+      return;
+    }
+    if (!bot.bot) {
+      res.json({ inventory: [] });
+      return;
+    }
+    const items = bot.bot.inventory.items().map((item) => ({
+      name: item.name,
+      count: item.count,
+      slot: item.slot,
+    }));
+    res.json({ inventory: items });
+  });
+
+  // Bot relationships (affinities)
+  app.get('/api/bots/:name/relationships', (req: Request, res: Response) => {
+    const name = req.params.name as string;
+    const bot = botManager.getBot(name);
+    if (!bot) {
+      res.status(404).json({ error: 'Bot not found' });
+      return;
+    }
+    const affinities = botManager.getAffinityManager().getAllForBot(name);
+    res.json({ relationships: affinities });
+  });
+
+  // Bot conversations
+  app.get('/api/bots/:name/conversations', (req: Request, res: Response) => {
+    const name = req.params.name as string;
+    const bot = botManager.getBot(name);
+    if (!bot) {
+      res.status(404).json({ error: 'Bot not found' });
+      return;
+    }
+    const conversations = botManager.getConversationManager().getAllConversations(name);
+    res.json({ conversations });
+  });
+
+  // Bot tasks (completed, failed, current)
+  app.get('/api/bots/:name/tasks', (req: Request, res: Response) => {
+    const name = req.params.name as string;
+    const bot = botManager.getBot(name);
+    if (!bot) {
+      res.status(404).json({ error: 'Bot not found' });
+      return;
+    }
+    const voyager = bot.getVoyagerLoop();
+    if (!voyager) {
+      res.json({ currentTask: null, completedTasks: [], failedTasks: [] });
+      return;
+    }
+    res.json({
+      currentTask: voyager.getCurrentTask(),
+      completedTasks: voyager.getCompletedTasks(),
+      failedTasks: voyager.getFailedTasks(),
+    });
+  });
+
+  // Full social graph (all bots, all players)
+  app.get('/api/relationships', (_req: Request, res: Response) => {
+    const allAffinities = botManager.getAffinityManager().getAll();
+    res.json({ relationships: allAffinities });
+  });
+
+  // Global skill library
+  app.get('/api/skills', (_req: Request, res: Response) => {
+    // Try to get skill library from any active codegen bot
+    const bots = botManager.getAllBots();
+    for (const bot of bots) {
+      const voyager = bot.getVoyagerLoop();
+      if (voyager) {
+        const library = voyager.getSkillLibrary();
+        const names = library.getSkillNames();
+        const skills = names.map((name) => {
+          const code = library.getCode(name);
+          return { name, code: code?.slice(0, 2000) ?? null };
+        });
+        res.json({ skills, count: skills.length });
+        return;
+      }
+    }
+    res.json({ skills: [], count: 0 });
+  });
+
+  // Single skill with code
+  app.get('/api/skills/:name', (req: Request, res: Response) => {
+    const skillName = req.params.name as string;
+    const bots = botManager.getAllBots();
+    for (const bot of bots) {
+      const voyager = bot.getVoyagerLoop();
+      if (voyager) {
+        const code = voyager.getSkillLibrary().getCode(skillName);
+        if (code) {
+          res.json({ name: skillName, code });
+          return;
+        }
+      }
+    }
+    res.status(404).json({ error: 'Skill not found' });
+  });
+
+  // Aggregate world state
+  app.get('/api/world', (_req: Request, res: Response) => {
+    const bots = botManager.getAllBots();
+    const firstConnected = bots.find((b) => b.bot);
+    if (!firstConnected?.bot) {
+      res.json({ timeOfDay: null, day: null, isRaining: null, onlineBots: 0 });
+      return;
+    }
+    const bot = firstConnected.bot;
+    const timeOfDay = bot.time.timeOfDay < 6000 ? 'sunrise'
+      : bot.time.timeOfDay < 12000 ? 'day'
+      : bot.time.timeOfDay < 18000 ? 'sunset'
+      : 'night';
+    res.json({
+      timeOfDay,
+      timeOfDayTicks: bot.time.timeOfDay,
+      day: bot.time.day,
+      isRaining: bot.isRaining,
+      onlineBots: bots.filter((b) => b.bot).length,
+    });
+  });
+
+  // Activity log
+  app.get('/api/activity', (req: Request, res: Response) => {
+    const limit = parseInt(String(req.query.limit ?? '50')) || 50;
+    const botName = req.query.bot ? String(req.query.bot) : undefined;
+    const type = req.query.type ? String(req.query.type) : undefined;
+    const events = eventLog.getRecent(limit, botName, type);
+    res.json({ events });
+  });
+
+  // Send chat message to a bot (from dashboard)
+  app.post('/api/bots/:name/chat', (req: Request, res: Response) => {
+    const { playerName, message } = req.body;
+    if (!playerName || !message) {
+      res.status(400).json({ error: 'playerName and message are required' });
+      return;
+    }
+    const name = req.params.name as string;
+    const bot = botManager.getBot(name);
+    if (!bot || !bot.bot) {
+      res.status(404).json({ error: 'Bot not found or not connected' });
+      return;
+    }
+    // Emit the message as if the player said it — the bot's chat listener will handle it
+    (bot.bot as any).emit('chat', playerName, message);
+    res.json({ success: true });
+  });
+
+  // Queue a task for a bot (from dashboard)
+  app.post('/api/bots/:name/task', (req: Request, res: Response) => {
+    const { description } = req.body;
+    if (!description) {
+      res.status(400).json({ error: 'description is required' });
+      return;
+    }
+    const name = req.params.name as string;
+    const bot = botManager.getBot(name);
+    if (!bot) {
+      res.status(404).json({ error: 'Bot not found' });
+      return;
+    }
+    const voyager = bot.getVoyagerLoop();
+    if (!voyager) {
+      res.status(400).json({ error: 'Bot is not in codegen mode' });
+      return;
+    }
+    voyager.queuePlayerTask(description, 'dashboard');
+
+    const event = eventLog.push({
+      type: 'bot:task',
+      botName: name,
+      description: `Task queued: ${description}`,
+      metadata: { source: 'dashboard' },
+    });
+    io.emit('bot:task', { bot: name, task: description, status: 'queued' });
+    io.emit('activity', event);
+
+    res.json({ success: true });
+  });
+
+  return { app, httpServer, io, eventLog };
 }

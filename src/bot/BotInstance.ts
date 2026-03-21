@@ -14,6 +14,8 @@ import { followPlayer } from '../actions/followPlayer';
 import { buildSchematic, listSchematics } from '../actions/buildSchematic';
 import { VoyagerLoop } from '../voyager/VoyagerLoop';
 import { StatsTracker } from '../voyager/StatsTracker';
+import { renderObservation } from '../voyager/Observation';
+import { PERSONALITIES } from '../personality/PersonalityType';
 
 export interface BotOptions {
   name: string;
@@ -433,7 +435,7 @@ export class BotInstance {
         buildSchematic(this.bot, match, { x: origin.x, y: origin.y, z: origin.z }, (placed, total) => {
           this.bot?.chat(`Building... ${placed}/${total} blocks`);
         }).then((result) => {
-          if (this.bot) this.bot.chat(result.message);
+          if (this.bot) this.bot.chat(result.message ?? 'Build complete.');
           this.state = BotState.IDLE;
           if (this.voyagerLoop) this.voyagerLoop.resume();
         }).catch((err) => {
@@ -486,7 +488,7 @@ export class BotInstance {
       const flatText = this.sanitizeOutput(cleanText).replace(/\n+/g, ' ').trim().slice(0, 200);
 
       // Don't send if empty after sanitization
-      if (!safeText) {
+      if (!flatText) {
         logger.warn({ bot: this.name, player: playerName, raw: response.text }, 'Suppressed empty response');
         this.conversationManager.addPlayerMessage(this.name, playerName, message);
         this.conversationManager.addBotResponse(this.name, playerName, '...');
@@ -816,5 +818,82 @@ export class BotInstance {
           }
         : null,
     };
+  }
+
+  getDetailedStatus() {
+    const basic = this.getStatus();
+
+    if (!this.bot) {
+      return {
+        ...basic,
+        personalityDisplayName: PERSONALITIES[this.personality]?.displayName ?? this.personality,
+        health: 0,
+        food: 0,
+        equipment: null,
+        inventory: [],
+        world: null,
+        voyager: null,
+      };
+    }
+
+    // Inventory
+    const inventory = this.bot.inventory.items().map((item) => ({
+      name: item.name,
+      count: item.count,
+      slot: item.slot,
+    }));
+
+    // Equipment (held item)
+    const heldItem = this.bot.heldItem;
+    const equipment = heldItem ? { name: heldItem.name, count: heldItem.count } : null;
+
+    // World context via Observation
+    let world = null;
+    try {
+      const obs = renderObservation(this.bot);
+      world = {
+        biome: obs.biome,
+        timeOfDay: obs.timeOfDay,
+        isRaining: this.bot.isRaining,
+        nearbyBlocks: obs.nearbyBlocks,
+        nearbyEntities: obs.nearbyEntities,
+      };
+    } catch { /* bot may not be fully spawned */ }
+
+    // Voyager state
+    let voyager = null;
+    if (this.voyagerLoop) {
+      voyager = {
+        isRunning: this.voyagerLoop.isRunning(),
+        isPaused: this.voyagerLoop.isPaused(),
+        currentTask: this.voyagerLoop.getCurrentTask(),
+        completedTasks: this.voyagerLoop.getCompletedTasks(),
+        failedTasks: this.voyagerLoop.getFailedTasks(),
+      };
+    }
+
+    return {
+      ...basic,
+      personalityDisplayName: PERSONALITIES[this.personality]?.displayName ?? this.personality,
+      health: this.bot.health,
+      food: this.bot.food,
+      equipment,
+      inventory,
+      world,
+      voyager,
+    };
+  }
+
+  /** Expose internal managers for API layer */
+  getAffinityManager(): AffinityManager {
+    return this.affinityManager;
+  }
+
+  getConversationManager(): ConversationManager {
+    return this.conversationManager;
+  }
+
+  getVoyagerLoop(): VoyagerLoop | null {
+    return this.voyagerLoop;
   }
 }

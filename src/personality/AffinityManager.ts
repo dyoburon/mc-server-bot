@@ -53,6 +53,21 @@ export class AffinityManager {
     return this.get(botName, playerName) < this.config.hostileThreshold;
   }
 
+  /** Get all affinity scores for a specific bot */
+  getAllForBot(botName: string): Record<string, number> {
+    return { ...(this.store[botName.toLowerCase()] || {}) };
+  }
+
+  /** Get the entire affinity store (all bots, all players) */
+  getAll(): AffinityStore {
+    // Return a deep-ish copy to prevent mutation
+    const copy: AffinityStore = {};
+    for (const [bot, players] of Object.entries(this.store)) {
+      copy[bot] = { ...players };
+    }
+    return copy;
+  }
+
   clearBot(botName: string): void {
     delete this.store[botName.toLowerCase()];
     this.save();

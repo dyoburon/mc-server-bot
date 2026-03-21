@@ -103,6 +103,14 @@ export class BotManager {
     return [...this.bots.values()];
   }
 
+  getAffinityManager(): AffinityManager {
+    return this.affinityManager;
+  }
+
+  getConversationManager(): ConversationManager {
+    return this.conversationManager;
+  }
+
   setMode(name: string, mode: string): boolean {
     const instance = this.bots.get(name.toLowerCase());
     if (!instance) return false;
