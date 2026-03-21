@@ -7,6 +7,7 @@ export class GeminiClient implements LLMClient {
   private temperature: number;
   private defaultMaxTokens: number;
   private baseUrl = 'https://generativelanguage.googleapis.com/v1beta/models/';
+  private embeddingModel = 'text-embedding-004';
 
   constructor(opts: { apiKey: string; model: string; temperature: number; maxTokens: number }) {
     this.apiKey = opts.apiKey;
@@ -53,6 +54,37 @@ export class GeminiClient implements LLMClient {
   async generate(systemPrompt: string, userMessage: string, maxTokens?: number): Promise<LLMResponse> {
     const contents = [{ role: 'user', parts: [{ text: userMessage }] }];
     return this.chat(systemPrompt, contents, maxTokens);
+  }
+
+  async embed(texts: string[]): Promise<number[][]> {
+    const vectors: number[][] = [];
+    for (const text of texts) {
+      const url = `${this.baseUrl}${this.embeddingModel}:embedContent?key=${this.apiKey}`;
+      const body = {
+        model: `models/${this.embeddingModel}`,
+        content: { parts: [{ text }] },
+      };
+
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(30000),
+      });
+
+      if (!resp.ok) {
+        const errBody = await resp.text();
+        throw new Error(`Gemini Embedding API ${resp.status}: ${errBody}`);
+      }
+
+      const json: any = await resp.json();
+      const values = json.embedding?.values;
+      if (!Array.isArray(values)) {
+        throw new Error('No embedding values in Gemini response');
+      }
+      vectors.push(values);
+    }
+    return vectors;
   }
 
   private extractText(json: any): string {

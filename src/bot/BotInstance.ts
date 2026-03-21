@@ -12,6 +12,7 @@ import { buildSystemPrompt, buildAmbientContext } from '../ai/prompts/personalit
 import { analyzeSentiment, parseCommand, extractTask } from '../ai/prompts/chat';
 import { followPlayer } from '../actions/followPlayer';
 import { VoyagerLoop } from '../voyager/VoyagerLoop';
+import { StatsTracker } from '../voyager/StatsTracker';
 
 export interface BotOptions {
   name: string;
@@ -50,6 +51,7 @@ export class BotInstance {
   private lastAttackedAt = 0;
   private lastHealth = 20;
   private lastAttackerName: string | null = null;
+  private statsTracker = new StatsTracker('./data');
   private static CHAT_COOLDOWN_MS = 3000;
 
   constructor(options: BotOptions) {
@@ -104,6 +106,11 @@ export class BotInstance {
         movements.canDig = false; // Don't destroy blocks while pathfinding
         this.bot.pathfinder.setMovements(movements);
         logger.info({ bot: this.name, canDig: movements.canDig }, 'Pathfinder movements configured');
+
+        // Auto-dismount to prevent physicsTick from stopping (matches original Voyager)
+        this.bot.on('mount', () => {
+          this.bot?.dismount();
+        });
       }
 
       // Auth with DyoAuth before doing anything else
@@ -143,6 +150,7 @@ export class BotInstance {
         this.bot.pathfinder.stop();
         logger.warn({ bot: this.name }, 'Stopped pathfinder after death');
       }
+      this.statsTracker.trackDeath(this.name);
       this.stopInstinct('death');
     });
 
@@ -154,6 +162,7 @@ export class BotInstance {
         food: this.bot?.food,
       }, 'Bot health updated');
       if (this.bot && health < this.lastHealth) {
+        this.statsTracker.trackDamage(this.name, this.lastHealth - health);
         this.triggerAttackInstinct(this.findLikelyThreat(), 'health-drop');
       }
       this.lastHealth = health;

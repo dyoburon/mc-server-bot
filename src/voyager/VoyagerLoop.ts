@@ -7,6 +7,9 @@ import { CurriculumAgent, Task } from './CurriculumAgent';
 import { ActionAgent, GeneratedCode } from './ActionAgent';
 import { CriticAgent, takeBotSnapshot } from './CriticAgent';
 import { logger } from '../util/logger';
+import { getProgressionState } from './Progression';
+import { buildTaskPlan, PlannedStep, replanTaskStep } from './TaskPlanner';
+import { StatsTracker } from './StatsTracker';
 
 export class VoyagerLoop {
   private bot: Bot;
@@ -18,6 +21,7 @@ export class VoyagerLoop {
   private curriculumAgent: CurriculumAgent;
   private actionAgent: ActionAgent | null;
   private criticAgent: CriticAgent;
+  private statsTracker: StatsTracker;
   private running = false;
   private paused = false;
   private loopTimeout: NodeJS.Timeout | null = null;
@@ -40,7 +44,7 @@ export class VoyagerLoop {
     this.personality = personality;
     this.config = config;
 
-    this.skillLibrary = new SkillLibrary(config.skills.directory, config.skills.maxSkills);
+    this.skillLibrary = new SkillLibrary(config.skills.directory, config.skills.maxSkills, llmClient);
     this.codeExecutor = new CodeExecutor(config.voyager.codeExecutionTimeoutMs);
 
     this.curriculumAgent = new CurriculumAgent(
@@ -57,6 +61,7 @@ export class VoyagerLoop {
       llmClient,
       config.voyager.criticLLMCalls
     );
+    this.statsTracker = new StatsTracker('./data');
   }
 
   start(): void {
@@ -123,15 +128,29 @@ export class VoyagerLoop {
   }
 
   queuePlayerTask(description: string, requestedBy: string): void {
-    const keywords = description
-      .toLowerCase()
-      .replace(/[^a-z0-9\s]/g, '')
-      .split(/\s+/)
-      .filter((w) => w.length > 2);
+    // Decompose asynchronously — subtasks get queued when ready
+    this.decomposeAndQueue(description, requestedBy).catch((err) => {
+      logger.warn({ err: err.message, task: description }, 'Decompose failed, queuing raw task');
+      const keywords = description
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, '')
+        .split(/\s+/)
+        .filter((w) => w.length > 2);
+      this.playerTaskQueue.push({ description, keywords });
+    });
+  }
 
-    const task: Task = { description, keywords };
-    this.playerTaskQueue.push(task);
-    logger.info({ bot: this.botName, task: description, requestedBy }, 'Player task queued');
+  private async decomposeAndQueue(description: string, requestedBy: string): Promise<void> {
+    const subtasks = await this.curriculumAgent.decomposeTask(this.bot, description);
+    for (const task of subtasks) {
+      this.playerTaskQueue.push(task);
+    }
+    logger.info({
+      bot: this.botName,
+      goal: description,
+      requestedBy,
+      subtasks: subtasks.map((t) => t.description),
+    }, subtasks.length > 1 ? 'Player goal decomposed and queued' : 'Player task queued');
   }
 
   private scheduleNext(): void {
@@ -160,39 +179,77 @@ export class VoyagerLoop {
       this.skillLibrary
     );
 
+    const progression = getProgressionState(this.bot, (this.curriculumAgent as any).completedTasks || []);
+    const plan = buildTaskPlan(task, progression);
     this.currentTask = task.description;
 
     logger.info({
       bot: this.botName,
       task: task.description,
       source: playerTask ? 'player-request' : 'autonomous',
+      plan: plan.steps.map((step) => step.description),
     }, 'Voyager task proposed');
+
+    for (const step of plan.steps) {
+      const ok = await this.executeTaskStep(step);
+      if (!ok) {
+        const blockers = this.curriculumAgent.getBlockerMemory().getTaskBlockers({ description: step.description, keywords: step.keywords, spec: step.spec });
+        const replanned = replanTaskStep({ description: step.description, keywords: step.keywords, spec: step.spec }, blockers, this.curriculumAgent.getWorldMemory());
+        if (replanned) {
+          logger.info({ bot: this.botName, step: step.description, replanned: replanned.steps.map((s) => s.description) }, 'Adaptive replan triggered');
+          for (const replannedStep of replanned.steps) {
+            const replannedOk = await this.executeTaskStep(replannedStep);
+            if (!replannedOk) {
+              this.currentTask = null;
+              return;
+            }
+          }
+          continue;
+        }
+        this.currentTask = null;
+        return;
+      }
+    }
+    this.currentTask = null;
+  }
+
+  private async executeTaskStep(step: PlannedStep): Promise<boolean> {
+    const task: Task = { description: step.description, keywords: step.keywords, spec: step.spec };
+    this.currentTask = task.description;
 
     // 2. Try the best existing skill first, then fall back to fresh generation
     if (!this.actionAgent) {
       logger.info({ bot: this.botName }, 'No LLM available, skipping task');
-      return;
+      return false;
     }
 
-    const bestSkill = this.skillLibrary.getBestMatch(task.keywords.join(' ') + ' ' + task.description);
-    let generated = bestSkill
+    const query = task.keywords.join(' ') + ' ' + task.description;
+    const bestSkill = await this.skillLibrary.getBestMatch(query);
+    const composableSkills = await this.skillLibrary.getComposableMatches(query, 3);
+    const blockerSummary = this.curriculumAgent.getBlockerMemory().summarize(task);
+    const worldMemorySummary = this.curriculumAgent.getWorldMemory().summary();
+    const useDirectSkill = !!bestSkill && composableSkills.length <= 1;
+    let generated = useDirectSkill
       ? this.skillToGeneratedCode(bestSkill)
-      : await this.actionAgent.generateCode(this.bot, task, this.skillLibrary);
+      : await this.actionAgent.generateCode(this.bot, task, this.skillLibrary, undefined, undefined, undefined, undefined, blockerSummary, worldMemorySummary);
 
     logger.info({
       bot: this.botName,
-      source: bestSkill ? 'skill-library' : 'action-agent',
+      source: useDirectSkill ? 'skill-library' : 'action-agent',
       skillName: bestSkill?.name,
+      skillScore: bestSkill?.score,
+      composableSkills: composableSkills.map((skill) => ({ name: skill.name, score: skill.score })),
       functionName: generated.functionName,
       codeLength: generated.functionCode.length,
       code: generated.functionCode,
       execCode: generated.execCode,
-    }, bestSkill ? 'Reusing saved skill' : 'Code generated by ActionAgent');
+    }, useDirectSkill ? 'Reusing saved skill' : 'Code generated by ActionAgent');
 
     // 3. Execute with retries
     let lastError: string | undefined;
+    let eventLog = '';
     for (let attempt = 0; attempt < this.config.voyager.maxRetriesPerTask; attempt++) {
-      if (!this.running) return;
+      if (!this.running) return false;
 
       const preState = takeBotSnapshot(this.bot);
 
@@ -208,8 +265,7 @@ export class VoyagerLoop {
 
       if (execResult.error?.startsWith('Execution interrupted:')) {
         logger.warn({ bot: this.botName, task: task.description, reason: execResult.error }, 'Voyager task interrupted');
-        this.currentTask = null;
-        return;
+        return false;
       }
 
       logger.info({
@@ -217,12 +273,16 @@ export class VoyagerLoop {
         execSuccess: execResult.success,
         execError: execResult.error,
         execOutput: execResult.output,
+        execEvents: execResult.events,
       }, 'Execution result');
+      this.statsTracker.trackExecution(this.botName, execResult.events);
+      eventLog = execResult.events.map((event) => `${event.type}: ${event.message}`).join(' | ');
 
       // Wait for actions to settle
       await new Promise((r) => setTimeout(r, 2000));
 
       const postState = takeBotSnapshot(this.bot);
+      await this.curriculumAgent.getWorldMemory().rememberFromBot(this.bot);
 
       // 4. Critic evaluation
       const criticResult = await this.criticAgent.evaluate(
@@ -243,25 +303,34 @@ export class VoyagerLoop {
 
       if (criticResult.success) {
         // Save the named function as a reusable skill
-        this.skillLibrary.save(
-          this.taskToSkillName(task),
-          task.description,
-          task.keywords,
-          generated.functionCode
-        );
+        const skillName = this.taskToSkillName(task);
+        const quality = this.estimateSkillQuality(criticResult.reason, generated.functionCode);
+        if (quality >= 0.65) {
+          await this.skillLibrary.save(
+            skillName,
+            task.description,
+            task.keywords,
+            generated.functionCode,
+            quality
+          );
+          this.skillLibrary.recordOutcome(skillName, true);
+        }
         this.curriculumAgent.updateProgress(task, true);
+        this.curriculumAgent.getBlockerMemory().clearTask(task);
         this.lastCompletedTask = task.description;
-        this.currentTask = null;
-        return;
+        return true;
       }
 
       // Retry with iterative refinement
       lastError = criticResult.reason;
-       if (attempt < this.config.voyager.maxRetriesPerTask - 1) {
-        logger.info({ bot: this.botName, attempt: attempt + 1, critique: criticResult.critique, previousSource: bestSkill ? 'skill-library' : 'action-agent' }, 'Retrying with error feedback');
+      if (useDirectSkill && bestSkill) {
+        this.skillLibrary.recordOutcome(bestSkill.name, false);
+      }
+        if (attempt < this.config.voyager.maxRetriesPerTask - 1) {
+        logger.info({ bot: this.botName, attempt: attempt + 1, critique: criticResult.critique, previousSource: useDirectSkill ? 'skill-library' : 'action-agent' }, 'Retrying with error feedback');
         generated = await this.actionAgent.generateCode(
           this.bot, task, this.skillLibrary,
-          lastError, generated.functionCode, criticResult.critique
+          lastError, generated.functionCode, criticResult.critique, eventLog, blockerSummary, worldMemorySummary
         );
         logger.info({
           bot: this.botName,
@@ -275,9 +344,15 @@ export class VoyagerLoop {
     }
 
     this.curriculumAgent.updateProgress(task, false);
+    this.curriculumAgent.getBlockerMemory().recordTaskFailure(task, {
+      success: false,
+      output: eventLog,
+      error: lastError,
+      events: [],
+    }, lastError || 'task failed');
     this.lastFailedTask = task.description;
-    this.currentTask = null;
     logger.warn({ bot: this.botName, task: task.description, lastError }, 'Task failed after max retries');
+    return false;
   }
 
   private taskToSkillName(task: Task): string {
@@ -297,5 +372,19 @@ export class VoyagerLoop {
       functionCode: skill.code,
       execCode: `await ${functionName}(bot);`,
     };
+  }
+
+  private estimateSkillQuality(reason: string, code: string): number {
+    let quality = 0.75;
+    if (reason.toLowerCase().includes('inventory changed') || reason.toLowerCase().includes('crafted') || reason.toLowerCase().includes('collected')) {
+      quality += 0.1;
+    }
+    if (code.length > 2000) {
+      quality -= 0.1;
+    }
+    if (code.includes('generatedTask')) {
+      quality -= 0.15;
+    }
+    return Math.max(0, Math.min(1, quality));
   }
 }

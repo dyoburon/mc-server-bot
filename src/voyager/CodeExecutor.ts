@@ -13,6 +13,13 @@ export interface ExecutionResult {
   success: boolean;
   output: string;
   error?: string;
+  events: ExecutionEvent[];
+}
+
+export interface ExecutionEvent {
+  type: string;
+  message: string;
+  data?: Record<string, unknown>;
 }
 
 export interface ExecuteParams {
@@ -47,6 +54,7 @@ export class CodeExecutor {
 
   async execute(bot: Bot, params: ExecuteParams | string): Promise<ExecutionResult> {
     const logs: string[] = [];
+    const events: ExecutionEvent[] = [];
     const startPos = bot.entity.position.clone();
     const interruptState: InterruptState = {
       interrupted: false,
@@ -69,6 +77,10 @@ export class CodeExecutor {
     const pushPos = (label: string) => {
       const pos = bot.entity.position;
       logs.push(`${label} pos=(${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)}) moving=${bot.pathfinder.isMoving()}`);
+    };
+
+    const pushEvent = (type: string, message: string, data?: Record<string, unknown>) => {
+      events.push({ type, message, data });
     };
 
     const addMovementTrace = (label: string) => {
@@ -144,8 +156,11 @@ export class CodeExecutor {
         throwIfInterrupted();
         const beforeItems = bot.inventory.items().map((i) => `${i.name}x${i.count}`).join(', ') || 'empty';
         logs.push(`[primitive] mineBlock("${name}", ${count})`);
+        pushEvent('primitive_start', `mineBlock ${name} x${count}`, { primitive: 'mineBlock', name, count });
         const result = await mineBlock(bot, name, count);
-        logs.push(`[primitive] mineBlock result: ${result.message}`);
+        const message = result.message || 'mineBlock completed';
+        logs.push(`[primitive] mineBlock result: ${message}`);
+        pushEvent(result.success ? 'primitive_success' : 'primitive_failure', message, { primitive: 'mineBlock', name, count });
         const afterItems = bot.inventory.items().map((i) => `${i.name}x${i.count}`).join(', ') || 'empty';
         logs.push(`[primitive] mineBlock inventory before=${beforeItems} after=${afterItems}`);
         return result;
@@ -153,43 +168,61 @@ export class CodeExecutor {
       craftItem: async (name: string, count = 1) => {
         throwIfInterrupted();
         logs.push(`[primitive] craftItem("${name}", ${count})`);
+        pushEvent('primitive_start', `craftItem ${name} x${count}`, { primitive: 'craftItem', name, count });
         const result = await craft(bot, name, count);
-        logs.push(`[primitive] craftItem result: ${result.message}`);
+        const message = result.message || 'craftItem completed';
+        logs.push(`[primitive] craftItem result: ${message}`);
+        pushEvent(result.success ? 'primitive_success' : 'primitive_failure', message, { primitive: 'craftItem', name, count });
         return result;
       },
       smeltItem: async (itemName: string, fuelName: string, count = 1) => {
         throwIfInterrupted();
         logs.push(`[primitive] smeltItem("${itemName}", "${fuelName}", ${count})`);
+        pushEvent('primitive_start', `smeltItem ${itemName} fuel=${fuelName} x${count}`, { primitive: 'smeltItem', itemName, fuelName, count });
         const result = await smelt(bot, itemName, fuelName, count);
-        logs.push(`[primitive] smeltItem result: ${result.message}`);
+        const message = result.message || 'smeltItem completed';
+        logs.push(`[primitive] smeltItem result: ${message}`);
+        pushEvent(result.success ? 'primitive_success' : 'primitive_failure', message, { primitive: 'smeltItem', itemName, fuelName, count });
         return result;
       },
       placeItem: async (name: string, x: number, y: number, z: number) => {
         throwIfInterrupted();
         logs.push(`[primitive] placeItem("${name}", ${x}, ${y}, ${z})`);
+        pushEvent('primitive_start', `placeItem ${name}`, { primitive: 'placeItem', name, x, y, z });
         const result = await placeBlock(bot, name, x, y, z);
-        logs.push(`[primitive] placeItem result: ${result.message}`);
+        const message = result.message || 'placeItem completed';
+        logs.push(`[primitive] placeItem result: ${message}`);
+        pushEvent(result.success ? 'primitive_success' : 'primitive_failure', message, { primitive: 'placeItem', name, x, y, z });
         return result;
       },
       withdrawItem: async (containerName: string, itemName: string, count = 1) => {
         throwIfInterrupted();
         logs.push(`[primitive] withdrawItem("${containerName}", "${itemName}", ${count})`);
+        pushEvent('primitive_start', `withdrawItem ${itemName} from ${containerName}`, { primitive: 'withdrawItem', containerName, itemName, count });
         const result = await withdrawFromContainer(bot, containerName, itemName, count);
-        logs.push(`[primitive] withdrawItem result: ${result.message}`);
+        const message = result.message || 'withdrawItem completed';
+        logs.push(`[primitive] withdrawItem result: ${message}`);
+        pushEvent(result.success ? 'primitive_success' : 'primitive_failure', message, { primitive: 'withdrawItem', containerName, itemName, count });
         return result;
       },
       depositItem: async (containerName: string, itemName: string, count = 1) => {
         throwIfInterrupted();
         logs.push(`[primitive] depositItem("${containerName}", "${itemName}", ${count})`);
+        pushEvent('primitive_start', `depositItem ${itemName} into ${containerName}`, { primitive: 'depositItem', containerName, itemName, count });
         const result = await depositToContainer(bot, containerName, itemName, count);
-        logs.push(`[primitive] depositItem result: ${result.message}`);
+        const message = result.message || 'depositItem completed';
+        logs.push(`[primitive] depositItem result: ${message}`);
+        pushEvent(result.success ? 'primitive_success' : 'primitive_failure', message, { primitive: 'depositItem', containerName, itemName, count });
         return result;
       },
       killMob: async (name: string, maxDuration = 30000) => {
         throwIfInterrupted();
         logs.push(`[primitive] killMob("${name}")`);
+        pushEvent('primitive_start', `killMob ${name}`, { primitive: 'killMob', name, maxDuration });
         const result = await attack(bot, name, maxDuration);
-        logs.push(`[primitive] killMob result: ${result.message}`);
+        const message = result.message || 'killMob completed';
+        logs.push(`[primitive] killMob result: ${message}`);
+        pushEvent(result.success ? 'primitive_success' : 'primitive_failure', message, { primitive: 'killMob', name, maxDuration });
         return result;
       },
       moveTo: async (x: number, y: number, z: number, range = 2, timeoutSec = 15) => {
@@ -198,6 +231,7 @@ export class CodeExecutor {
         const start = bot.entity.position;
         const targetSummary = `(${x.toFixed(1)}, ${y.toFixed(1)}, ${z.toFixed(1)})`;
         logs.push(`[primitive] moveTo target=${targetSummary} range=${range} timeoutSec=${timeoutSec}`);
+        pushEvent('primitive_start', `moveTo ${targetSummary}`, { primitive: 'moveTo', x, y, z, range, timeoutSec });
         logs.push(`[primitive] moveTo startPos=(${start.x.toFixed(1)}, ${start.y.toFixed(1)}, ${start.z.toFixed(1)})`);
         bot.pathfinder.setGoal(new goals.GoalNear(x, y, z, range));
         return new Promise<boolean>((resolve, reject) => {
@@ -205,6 +239,7 @@ export class CodeExecutor {
             bot.pathfinder.stop();
             const pos = bot.entity.position;
             logs.push(`[primitive] moveTo: timed out, stopping at (${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)})`);
+            pushEvent('primitive_failure', 'moveTo timed out', { primitive: 'moveTo', x, y, z, range, timeoutSec });
             cleanupTrace();
             cleanupInterrupt();
             resolve(false);
@@ -213,6 +248,7 @@ export class CodeExecutor {
             clearTimeout(timeout);
             bot.pathfinder.stop();
             logs.push(`[primitive] moveTo: interrupted (${reason})`);
+            pushEvent('interrupt', `moveTo interrupted: ${reason}`, { primitive: 'moveTo', reason });
             cleanupTrace();
             cleanupInterrupt();
             reject(new Error(`Execution interrupted: ${reason}`));
@@ -221,6 +257,7 @@ export class CodeExecutor {
             clearTimeout(timeout);
             const pos = bot.entity.position;
             logs.push(`[primitive] moveTo: goal reached at (${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)})`);
+            pushEvent('primitive_success', 'moveTo reached goal', { primitive: 'moveTo', x, y, z, range, timeoutSec });
             cleanupTrace();
             cleanupInterrupt();
             resolve(true);
@@ -231,8 +268,10 @@ export class CodeExecutor {
         throwIfInterrupted();
         const cleanupTrace = addMovementTrace('exploreUntil');
         logs.push(`[primitive] exploreUntil(${JSON.stringify(direction)}, ${maxTime}s)`);
+        pushEvent('primitive_start', 'exploreUntil started', { primitive: 'exploreUntil', direction, maxTime });
         if (!direction || typeof direction.x !== 'number' || typeof direction.y !== 'number' || typeof direction.z !== 'number') {
           logs.push(`[primitive] exploreUntil: invalid direction argument ${JSON.stringify(direction)}`);
+          pushEvent('primitive_failure', 'exploreUntil invalid direction', { primitive: 'exploreUntil', direction });
           cleanupTrace();
           throw new Error('exploreUntil requires direction { x, y, z }');
         }
@@ -246,6 +285,7 @@ export class CodeExecutor {
           if (found) {
             const blockPos = (found as any)?.position;
             logs.push(`[primitive] exploreUntil: found target on iteration=${iteration}${blockPos ? ` at (${blockPos.x}, ${blockPos.y}, ${blockPos.z})` : ''}`);
+            pushEvent('primitive_success', 'exploreUntil found target', { primitive: 'exploreUntil', iteration, blockPos });
             cleanupTrace();
             return found;
           }
@@ -257,6 +297,7 @@ export class CodeExecutor {
             const timeout = setTimeout(() => {
               bot.pathfinder.stop();
               logs.push(`[primitive] exploreUntil: iteration=${iteration} timed out waiting for goal`);
+              pushEvent('path_timeout', 'exploreUntil iteration timed out', { primitive: 'exploreUntil', iteration });
               cleanupInterrupt();
               resolve();
             }, 10000);
@@ -264,6 +305,7 @@ export class CodeExecutor {
               clearTimeout(timeout);
               bot.pathfinder.stop();
               logs.push(`[primitive] exploreUntil: interrupted (${reason}) on iteration=${iteration}`);
+              pushEvent('interrupt', `exploreUntil interrupted: ${reason}`, { primitive: 'exploreUntil', iteration, reason });
               cleanupInterrupt();
               reject(new Error(`Execution interrupted: ${reason}`));
             });
@@ -271,12 +313,14 @@ export class CodeExecutor {
               clearTimeout(timeout);
               const reachedPos = bot.entity.position;
               logs.push(`[primitive] exploreUntil: iteration=${iteration} goal reached at (${reachedPos.x.toFixed(1)}, ${reachedPos.y.toFixed(1)}, ${reachedPos.z.toFixed(1)})`);
+              pushEvent('path_goal_reached', 'exploreUntil iteration goal reached', { primitive: 'exploreUntil', iteration });
               cleanupInterrupt();
               resolve();
             });
           });
         }
         logs.push('[primitive] exploreUntil: timed out');
+        pushEvent('primitive_failure', 'exploreUntil timed out', { primitive: 'exploreUntil', maxTime });
         cleanupTrace();
         return null;
       },
@@ -317,14 +361,17 @@ export class CodeExecutor {
 
       pushPos('[exec] end');
       logs.push(`[exec] movedDistance=${startPos.distanceTo(bot.entity.position).toFixed(2)}`);
-      return { success: true, output: logs.join('\n') };
+      pushEvent('execution_complete', 'Execution completed', { movedDistance: Number(startPos.distanceTo(bot.entity.position).toFixed(2)) });
+      return { success: true, output: logs.join('\n'), events };
     } catch (err: any) {
       pushPos('[exec] error');
       logs.push(`[exec] movedDistance=${startPos.distanceTo(bot.entity.position).toFixed(2)}`);
+      pushEvent('execution_error', err.message || String(err), { movedDistance: Number(startPos.distanceTo(bot.entity.position).toFixed(2)) });
       return {
         success: false,
         output: logs.join('\n'),
         error: err.message || String(err),
+        events,
       };
     } finally {
       if (this.currentInterrupt === interruptState) {
@@ -342,7 +389,7 @@ export class CodeExecutor {
       get isRaining() { return bot.isRaining; },
       get inventory() {
         return {
-          items: () => bot.inventory.items().map((i) => ({ name: i.name, count: i.count, slot: i.slot })),
+          items: () => bot.inventory.items().map((i) => ({ name: i.name, count: i.count, slot: i.slot, type: i.type })),
         };
       },
       chat: (msg: string) => {
@@ -403,6 +450,9 @@ export class CodeExecutor {
         bot.removeListener(event as any, listener);
       },
       waitForTicks: (ticks: number) => interruptibleDelay(ticks * 50),
+      toss: async (itemType: number, metadata: any, count: number) => {
+        await bot.toss(itemType, metadata, count);
+      },
     };
   }
 }
