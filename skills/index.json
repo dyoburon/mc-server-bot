@@ -315,5 +315,57 @@
       "tasks"
     ],
     "file": "stop_all_tasks.js"
+  },
+  {
+    "name": "craft_a_stone_sword",
+    "description": "Craft a stone sword",
+    "keywords": [
+      "craft",
+      "stone_sword",
+      "tool"
+    ],
+    "file": "craft_a_stone_sword.js",
+    "quality": 0.8,
+    "successCount": 1,
+    "failureCount": 0
+  },
+  {
+    "name": "mine_1_birch_log",
+    "description": "Mine 1 birch log",
+    "keywords": [
+      "mine",
+      "birch_log",
+      "wood"
+    ],
+    "file": "mine_1_birch_log.js",
+    "quality": 0.8,
+    "successCount": 1,
+    "failureCount": 0
+  },
+  {
+    "name": "mine_7_stone_blocks",
+    "description": "Mine 7 stone blocks",
+    "keywords": [
+      "mine",
+      "stone",
+      "furnace"
+    ],
+    "file": "mine_7_stone_blocks.js",
+    "quality": 0.8,
+    "successCount": 1,
+    "failureCount": 0
+  },
+  {
+    "name": "mine_3_coal_ore_at",
+    "description": "Mine 3 coal ore at 867, 37, 285",
+    "keywords": [
+      "coal",
+      "mining",
+      "fuel"
+    ],
+    "file": "mine_3_coal_ore_at.js",
+    "quality": 0.8,
+    "successCount": 1,
+    "failureCount": 0
   }
 ]

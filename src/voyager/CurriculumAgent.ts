@@ -327,17 +327,17 @@ Propose the next task:`;
       const response = await this.llmClient!.generate(CURRICULUM_SYSTEM_PROMPT, userMessage, 1000);
       logger.debug({ rawResponse: response.text.slice(0, 500) }, 'Curriculum LLM raw response');
       const cleaned = response.text.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-      // Extract first JSON object if LLM wraps it in extra text
-      const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) throw new Error(`No JSON object found in response: ${cleaned.slice(0, 200)}`);
       let parsed: any;
-      try {
-        parsed = JSON.parse(jsonMatch[0]);
-      } catch {
-        // Truncated JSON — try to salvage the task field via regex
-        const taskMatch = jsonMatch[0].match(/"task"\s*:\s*"([^"]+)"/);
-        if (!taskMatch) throw new Error(`Truncated JSON, could not extract task: ${cleaned.slice(0, 200)}`);
-        const kwMatch = jsonMatch[0].match(/"keywords"\s*:\s*\[([^\]]*)\]/);
+      // Try full JSON parse first
+      const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try { parsed = JSON.parse(jsonMatch[0]); } catch { /* truncated */ }
+      }
+      // Salvage from truncated/incomplete JSON via regex
+      if (!parsed) {
+        const taskMatch = cleaned.match(/"task"\s*:\s*"([^"]+)"/) || cleaned.match(/"task"\s*:\s*"([^"]{5,})/);
+        if (!taskMatch) throw new Error(`Could not extract task from LLM response: ${cleaned.slice(0, 200)}`);
+        const kwMatch = cleaned.match(/"keywords"\s*:\s*\[([^\]]*)\]/);
         const keywords = kwMatch ? kwMatch[1].match(/"([^"]+)"/g)?.map(s => s.replace(/"/g, '')) || [] : [];
         parsed = { task: taskMatch[1], keywords };
         logger.info({ task: parsed.task }, 'Curriculum: salvaged task from truncated LLM JSON');
