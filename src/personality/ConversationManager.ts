@@ -36,6 +36,17 @@ export class ConversationManager {
     return contents;
   }
 
+  /** Get all conversations for a specific bot, keyed by player name */
+  getAllConversations(botName: string): Record<string, ChatMessage[]> {
+    const botMap = this.histories.get(botName.toLowerCase());
+    if (!botMap) return {};
+    const result: Record<string, ChatMessage[]> = {};
+    for (const [player, messages] of botMap.entries()) {
+      result[player] = [...messages];
+    }
+    return result;
+  }
+
   clearBot(botName: string): void {
     this.histories.delete(botName.toLowerCase());
   }
@@ -54,6 +65,14 @@ export class ConversationManager {
   private trim(botName: string, playerName: string): void {
     const history = this.getOrCreate(botName, playerName);
     while (history.length > this.maxHistory) {
+      // Remove in pairs to maintain alternating user/model roles
+      history.shift();
+      if (history.length > 0 && history[0].role === 'model') {
+        history.shift();
+      }
+    }
+    // Ensure history always starts with 'user' role (Gemini requirement)
+    while (history.length > 0 && history[0].role === 'model') {
       history.shift();
     }
   }

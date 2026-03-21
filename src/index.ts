@@ -5,6 +5,7 @@ import { createAPIServer } from './server/api';
 import { logger } from './util/logger';
 import { GeminiClient } from './ai/GeminiClient';
 import { LLMClient } from './ai/LLMClient';
+import { setupSocketEvents } from './server/socketEvents';
 
 async function main() {
   logger.info('Starting DyoBot sidecar...');
@@ -31,15 +32,20 @@ async function main() {
   // Restore previously saved bots
   await botManager.loadSavedBots();
 
-  // Start HTTP API server
-  const app = createAPIServer(botManager);
-  app.listen(config.api.port, config.api.host, () => {
-    logger.info({ port: config.api.port, host: config.api.host }, 'DyoBot API server running');
+  // Start HTTP API server with Socket.IO
+  const { httpServer, io, eventLog } = createAPIServer(botManager);
+
+  // Set up real-time Socket.IO event broadcasting
+  setupSocketEvents(botManager, io, eventLog);
+
+  httpServer.listen(config.api.port, config.api.host, () => {
+    logger.info({ port: config.api.port, host: config.api.host }, 'DyoBot API server running (HTTP + WebSocket)');
   });
 
   // Graceful shutdown
   const shutdown = async () => {
     logger.info('Shutting down DyoBot...');
+    io.close();
     await botManager.removeAllBots();
     process.exit(0);
   };

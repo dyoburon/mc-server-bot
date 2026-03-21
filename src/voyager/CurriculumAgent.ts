@@ -608,6 +608,14 @@ Decompose into ordered subtasks:`;
     return { description, keywords, spec: inferTaskSpec({ description, keywords }) };
   }
 
+  getCompletedTasks(): string[] {
+    return [...this.completedTasks];
+  }
+
+  getFailedTasks(): string[] {
+    return [...this.failedTasks];
+  }
+
   getBlockerMemory(): BlockerMemory {
     return this.blockerMemory;
   }

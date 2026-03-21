@@ -1,8 +1,5 @@
 [
   {
-    "quality": 0.7,
-    "successCount": 0,
-    "failureCount": 0,
     "name": "wander_randomly",
     "description": "Walk to a random nearby position",
     "keywords": [
@@ -15,9 +12,6 @@
     "file": "wander_randomly.js"
   },
   {
-    "quality": 0.7,
-    "successCount": 0,
-    "failureCount": 0,
     "name": "look_at_nearest_player",
     "description": "Look at the nearest player",
     "keywords": [
@@ -29,9 +23,6 @@
     "file": "look_at_nearest_player.js"
   },
   {
-    "quality": 0.7,
-    "successCount": 0,
-    "failureCount": 0,
     "name": "announce_wares",
     "description": "Announce trading wares to nearby players",
     "keywords": [
@@ -45,9 +36,6 @@
     "file": "announce_wares.js"
   },
   {
-    "quality": 0.7,
-    "successCount": 0,
-    "failureCount": 0,
     "name": "patrol_square",
     "description": "Patrol in a square pattern around current position",
     "keywords": [
@@ -60,9 +48,6 @@
     "file": "patrol_square.js"
   },
   {
-    "quality": 0.7,
-    "successCount": 0,
-    "failureCount": 0,
     "name": "idle_and_look_around",
     "description": "Stand idle and look around randomly",
     "keywords": [
@@ -75,9 +60,6 @@
     "file": "idle_and_look_around.js"
   },
   {
-    "quality": 0.7,
-    "successCount": 0,
-    "failureCount": 0,
     "name": "walk_to_nearest_player",
     "description": "Walk to the nearest player",
     "keywords": [
@@ -90,9 +72,6 @@
     "file": "walk_to_nearest_player.js"
   },
   {
-    "quality": 0.7,
-    "successCount": 0,
-    "failureCount": 0,
     "name": "challenge_stranger",
     "description": "Challenge a nearby player as a guard would",
     "keywords": [
@@ -105,9 +84,6 @@
     "file": "challenge_stranger.js"
   },
   {
-    "quality": 0.7,
-    "successCount": 0,
-    "failureCount": 0,
     "name": "share_wisdom",
     "description": "Share a wise saying about Minecraft",
     "keywords": [
@@ -120,9 +96,6 @@
     "file": "share_wisdom.js"
   },
   {
-    "quality": 0.7,
-    "successCount": 0,
-    "failureCount": 0,
     "name": "mine_the_nearest_oak_log",
     "description": "mine the nearest oak log",
     "keywords": [
@@ -135,9 +108,6 @@
     "file": "mine_the_nearest_oak_log.js"
   },
   {
-    "quality": 0.7,
-    "successCount": 0,
-    "failureCount": 0,
     "name": "mine_the_block_the_player",
     "description": "mine the block the player is looking at",
     "keywords": [
@@ -151,9 +121,6 @@
     "file": "mine_the_block_the_player.js"
   },
   {
-    "quality": 0.7,
-    "successCount": 0,
-    "failureCount": 0,
     "name": "point_the_player_towards_the",
     "description": "point the player towards the nearest forest",
     "keywords": [
@@ -168,9 +135,6 @@
     "file": "point_the_player_towards_the.js"
   },
   {
-    "quality": 0.7,
-    "successCount": 0,
-    "failureCount": 0,
     "name": "mine_3_blocks_of_grass",
     "description": "mine 3 blocks of grass",
     "keywords": [
@@ -181,9 +145,6 @@
     "file": "mine_3_blocks_of_grass.js"
   },
   {
-    "quality": 0.7,
-    "successCount": 0,
-    "failureCount": 0,
     "name": "mine_1_oak_log",
     "description": "Mine 1 oak log",
     "keywords": [
@@ -194,9 +155,6 @@
     "file": "mine_1_oak_log.js"
   },
   {
-    "quality": 0.7,
-    "successCount": 0,
-    "failureCount": 0,
     "name": "walk_to_the_nearest_player",
     "description": "Walk to the nearest player",
     "keywords": [
@@ -207,9 +165,6 @@
     "file": "walk_to_the_nearest_player.js"
   },
   {
-    "quality": 0.7,
-    "successCount": 0,
-    "failureCount": 0,
     "name": "find_a_water_source",
     "description": "find a water source",
     "keywords": [
@@ -220,9 +175,6 @@
     "file": "find_a_water_source.js"
   },
   {
-    "quality": 0.7,
-    "successCount": 0,
-    "failureCount": 0,
     "name": "challengestranger",
     "description": "challenge_stranger",
     "keywords": [
@@ -233,9 +185,6 @@
     "file": "challengestranger.js"
   },
   {
-    "quality": 0.7,
-    "successCount": 0,
-    "failureCount": 0,
     "name": "find_the_nearest_water_source",
     "description": "find the nearest water source",
     "keywords": [
@@ -248,9 +197,6 @@
     "file": "find_the_nearest_water_source.js"
   },
   {
-    "quality": 0.7,
-    "successCount": 0,
-    "failureCount": 0,
     "name": "announce_trading_wares",
     "description": "Announce trading wares",
     "keywords": [
@@ -261,9 +207,6 @@
     "file": "announce_trading_wares.js"
   },
   {
-    "quality": 0.7,
-    "successCount": 0,
-    "failureCount": 0,
     "name": "pointtheplayertowardsthenearestforest",
     "description": "point_the_player_towards_the_nearest_forest",
     "keywords": [
@@ -273,9 +216,6 @@
     "file": "pointtheplayertowardsthenearestforest.js"
   },
   {
-    "quality": 0.7,
-    "successCount": 0,
-    "failureCount": 0,
     "name": "share_wisdom_with_nearby_player",
     "description": "Share wisdom with nearby player",
     "keywords": [
@@ -286,9 +226,6 @@
     "file": "share_wisdom_with_nearby_player.js"
   },
   {
-    "quality": 0.7,
-    "successCount": 0,
-    "failureCount": 0,
     "name": "explore_and_find_wheat_seeds",
     "description": "Explore and find wheat seeds",
     "keywords": [
@@ -299,9 +236,6 @@
     "file": "explore_and_find_wheat_seeds.js"
   },
   {
-    "quality": 0.7,
-    "successCount": 0,
-    "failureCount": 0,
     "name": "craft_a_wooden_hoe",
     "description": "Craft a wooden hoe",
     "keywords": [
@@ -312,9 +246,6 @@
     "file": "craft_a_wooden_hoe.js"
   },
   {
-    "quality": 0.8,
-    "successCount": 3,
-    "failureCount": 0,
     "name": "walk_to_the_nearest_farmland",
     "description": "Walk to the nearest farmland",
     "keywords": [
@@ -325,114 +256,16 @@
     "file": "walk_to_the_nearest_farmland.js"
   },
   {
-    "quality": 0.9,
-    "successCount": 1,
-    "failureCount": 0,
-    "name": "craft_1_crafting_table",
-    "description": "Craft 1 crafting table",
-    "keywords": [
-      "craft",
-      "crafting_table",
-      "wood"
-    ],
-    "file": "craft_1_crafting_table.js"
-  },
-  {
-    "quality": 0.9,
-    "successCount": 1,
-    "failureCount": 0,
-    "name": "craft_4_sticks",
-    "description": "Craft 4 sticks",
-    "keywords": [
-      "craft",
-      "stick",
-      "wood"
-    ],
-    "file": "craft_4_sticks.js"
-  },
-  {
-    "quality": 0.9,
-    "successCount": 1,
-    "failureCount": 0,
-    "name": "craft_a_wooden_sword",
-    "description": "Craft a wooden sword",
-    "keywords": [
-      "craft",
-      "wooden_sword",
-      "tool"
-    ],
-    "file": "craft_a_wooden_sword.js"
-  },
-  {
-    "quality": 0.9,
-    "successCount": 1,
-    "failureCount": 0,
-    "name": "craft_a_wooden_shovel",
-    "description": "Craft a wooden shovel",
-    "keywords": [
-      "craft",
-      "wooden_shovel",
-      "tool"
-    ],
-    "file": "craft_a_wooden_shovel.js"
-  },
-  {
-    "quality": 0.8,
-    "successCount": 1,
-    "failureCount": 0,
-    "name": "mine_8_cobblestone",
-    "description": "Mine 8 cobblestone",
+    "name": "mine_3_oak_logs",
+    "description": "Mine 3 oak logs",
     "keywords": [
       "mine",
-      "cobblestone",
-      "stone"
+      "oak_log",
+      "wood"
     ],
-    "file": "mine_8_cobblestone.js"
+    "file": "mine_3_oak_logs.js"
   },
   {
-    "quality": 0.8,
-    "successCount": 1,
-    "failureCount": 0,
-    "name": "break_the_nearest_chest",
-    "description": "Break the nearest chest",
-    "keywords": [
-      "break",
-      "the",
-      "nearest",
-      "chest"
-    ],
-    "file": "break_the_nearest_chest.js"
-  },
-  {
-    "quality": 0.9,
-    "successCount": 1,
-    "failureCount": 0,
-    "name": "mine_3_cobblestone",
-    "description": "Mine 3 cobblestone",
-    "keywords": [
-      "mine",
-      "cobblestone",
-      "stone"
-    ],
-    "file": "mine_3_cobblestone.js"
-  },
-  {
-    "quality": 0.8,
-    "successCount": 1,
-    "failureCount": 0,
-    "name": "craft_a_wooden_axe",
-    "description": "Craft a wooden axe",
-    "keywords": [
-      "craft",
-      "wooden_axe",
-      "tool"
-    ],
-    "file": "craft_a_wooden_axe.js"
-  },
-  {
-    "quality": 0.9,
-    "successCount": 1,
-    "failureCount": 0,
     "name": "craft_a_wooden_pickaxe",
     "description": "Craft a wooden pickaxe",
     "keywords": [
@@ -443,42 +276,44 @@
     "file": "craft_a_wooden_pickaxe.js"
   },
   {
-    "quality": 0.8,
-    "successCount": 4,
-    "failureCount": 0,
+    "name": "mine_3_coalore",
+    "description": "Mine 3 coal_ore",
+    "keywords": [
+      "mine",
+      "coal",
+      "fuel",
+      "progression"
+    ],
+    "file": "mine_3_coalore.js"
+  },
+  {
     "name": "explore_50_blocks_to_the",
-    "description": "Explore 50 blocks to the west",
+    "description": "Explore 50 blocks to the north",
     "keywords": [
       "explore",
       "walk",
-      "west"
+      "north"
     ],
     "file": "explore_50_blocks_to_the.js"
   },
   {
-    "quality": 0.8,
-    "successCount": 1,
-    "failureCount": 0,
-    "name": "craft_a_stone_sword",
-    "description": "Craft a stone sword",
-    "keywords": [
-      "craft",
-      "stone_sword",
-      "tool"
-    ],
-    "file": "craft_a_stone_sword.js"
-  },
-  {
-    "name": "mine_1_birch_log",
-    "description": "Mine 1 birch log",
+    "name": "mine_3_cobblestone",
+    "description": "Mine 3 cobblestone",
     "keywords": [
       "mine",
-      "birch_log",
-      "wood"
+      "stone",
+      "cobblestone"
     ],
-    "file": "mine_1_birch_log.js",
-    "quality": 0.8,
-    "successCount": 1,
-    "failureCount": 0
+    "file": "mine_3_cobblestone.js"
+  },
+  {
+    "name": "stop_all_tasks",
+    "description": "stop all tasks",
+    "keywords": [
+      "stop",
+      "all",
+      "tasks"
+    ],
+    "file": "stop_all_tasks.js"
   }
 ]

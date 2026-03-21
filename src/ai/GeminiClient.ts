@@ -7,7 +7,6 @@ export class GeminiClient implements LLMClient {
   private temperature: number;
   private defaultMaxTokens: number;
   private baseUrl = 'https://generativelanguage.googleapis.com/v1beta/models/';
-  private embeddingModel = 'text-embedding-004';
 
   constructor(opts: { apiKey: string; model: string; temperature: number; maxTokens: number }) {
     this.apiKey = opts.apiKey;
@@ -19,12 +18,15 @@ export class GeminiClient implements LLMClient {
   async chat(systemPrompt: string, contents: any[], maxTokens?: number): Promise<LLMResponse> {
     const url = `${this.baseUrl}${this.model}:generateContent?key=${this.apiKey}`;
 
-    const body = {
+    const body: any = {
       systemInstruction: { parts: [{ text: systemPrompt }] },
       contents,
       generationConfig: {
         temperature: this.temperature,
         maxOutputTokens: maxTokens || this.defaultMaxTokens,
+        thinkingConfig: {
+          thinkingBudget: 128, // Minimal thinking for fast chat responses
+        },
       },
     };
 
@@ -32,7 +34,7 @@ export class GeminiClient implements LLMClient {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(30000),
+      signal: AbortSignal.timeout(60000),
     });
 
     if (!resp.ok) {
@@ -56,35 +58,46 @@ export class GeminiClient implements LLMClient {
     return this.chat(systemPrompt, contents, maxTokens);
   }
 
-  async embed(texts: string[]): Promise<number[][]> {
-    const vectors: number[][] = [];
-    for (const text of texts) {
-      const url = `${this.baseUrl}${this.embeddingModel}:embedContent?key=${this.apiKey}`;
-      const body = {
-        model: `models/${this.embeddingModel}`,
-        content: { parts: [{ text }] },
-      };
+  /**
+   * Generate with thinking enabled — use for code generation tasks
+   * where reasoning improves output quality.
+   */
+  async generateWithThinking(systemPrompt: string, userMessage: string, maxTokens?: number): Promise<LLMResponse> {
+    const url = `${this.baseUrl}${this.model}:generateContent?key=${this.apiKey}`;
 
-      const resp = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(30000),
-      });
+    const body = {
+      systemInstruction: { parts: [{ text: systemPrompt }] },
+      contents: [{ role: 'user', parts: [{ text: userMessage }] }],
+      generationConfig: {
+        temperature: this.temperature,
+        maxOutputTokens: maxTokens || this.defaultMaxTokens,
+        thinkingConfig: {
+          thinkingBudget: 2048,
+        },
+      },
+    };
 
-      if (!resp.ok) {
-        const errBody = await resp.text();
-        throw new Error(`Gemini Embedding API ${resp.status}: ${errBody}`);
-      }
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(120000),
+    });
 
-      const json: any = await resp.json();
-      const values = json.embedding?.values;
-      if (!Array.isArray(values)) {
-        throw new Error('No embedding values in Gemini response');
-      }
-      vectors.push(values);
+    if (!resp.ok) {
+      const errBody = await resp.text();
+      throw new Error(`Gemini API ${resp.status}: ${errBody}`);
     }
-    return vectors;
+
+    const json: any = await resp.json();
+    const text = this.extractText(json);
+    const usage = json.usageMetadata;
+
+    return {
+      text,
+      inputTokens: usage?.promptTokenCount,
+      outputTokens: usage?.candidatesTokenCount,
+    };
   }
 
   private extractText(json: any): string {
@@ -92,17 +105,27 @@ export class GeminiClient implements LLMClient {
     if (!candidates || candidates.length === 0) {
       throw new Error('No candidates in Gemini response');
     }
+
+    const finishReason = candidates[0].finishReason;
+    if (finishReason === 'SAFETY') {
+      logger.warn('Gemini response blocked by safety filter');
+      return '';
+    }
+    if (finishReason === 'MAX_TOKENS') {
+      logger.warn('Gemini response truncated (MAX_TOKENS)');
+    }
+
     const parts = candidates[0].content?.parts;
     if (!parts || parts.length === 0) {
       throw new Error('No parts in Gemini response');
     }
-    const text = parts
-      .map((part: any) => (typeof part?.text === 'string' ? part.text : ''))
-      .join('')
-      .trim();
-    if (!text) {
-      throw new Error('No text parts in Gemini response');
+
+    // Skip thinking parts (thought: true) — only return actual content
+    const contentParts = parts.filter((p: any) => !p.thought);
+    if (contentParts.length === 0) {
+      // Fallback: if all parts are thinking, return the last part
+      return parts[parts.length - 1].text?.trim() || '';
     }
-    return text;
+    return contentParts.map((p: any) => p.text || '').join('').trim();
   }
 }
