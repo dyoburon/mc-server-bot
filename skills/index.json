@@ -444,15 +444,28 @@
   },
   {
     "name": "explore_50_blocks_to_the",
-    "description": "Explore 50 blocks to the east",
+    "description": "Explore 50 blocks to the west",
     "keywords": [
       "explore",
       "walk",
-      "east"
+      "west"
     ],
     "file": "explore_50_blocks_to_the.js",
     "quality": 0.8,
-    "successCount": 2,
+    "successCount": 4,
+    "failureCount": 0
+  },
+  {
+    "name": "craft_a_stone_sword",
+    "description": "Craft a stone sword",
+    "keywords": [
+      "craft",
+      "stone_sword",
+      "tool"
+    ],
+    "file": "craft_a_stone_sword.js",
+    "quality": 0.8,
+    "successCount": 1,
     "failureCount": 0
   }
 ]

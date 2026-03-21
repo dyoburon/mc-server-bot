@@ -157,7 +157,7 @@ export class VoyagerLoop {
     if (!this.running || this.paused) return;
 
     this.loopTimeout = setTimeout(async () => {
-      if (!this.running) return;
+      if (!this.running || this.paused) return;
 
       try {
         await this.runOneCycle();
