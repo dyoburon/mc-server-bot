@@ -171,24 +171,52 @@ export class BuildCoordinator {
     // Determine Y range
     const minLocalY = 0;
     const maxLocalY = end.y - start.y;
-    const totalYLayers = maxLocalY - minLocalY + 1;
 
-    // Partition Y layers across bots
-    const layersPerBot = Math.ceil(totalYLayers / botNames.length);
-    const assignments: BotAssignment[] = botNames.map((botName, idx) => {
-      const yMin = minLocalY + idx * layersPerBot;
-      const yMax = Math.min(yMin + layersPerBot - 1, maxLocalY);
-      const botBlocks = blocks.filter((b) => b.localY >= yMin && b.localY <= yMax);
+    // Partition by block count so each bot gets roughly equal work
+    // Group blocks by Y layer, then assign layers to bots greedily
+    const blocksPerY = new Map<number, number>();
+    for (const b of blocks) {
+      blocksPerY.set(b.localY, (blocksPerY.get(b.localY) || 0) + 1);
+    }
+    const yLevels = [...blocksPerY.keys()].sort((a, b) => a - b);
+    const targetPerBot = Math.ceil(blocks.length / botNames.length);
+
+    // Assign contiguous Y ranges to each bot, splitting when block count target is reached
+    const botRanges: { yMin: number; yMax: number; count: number }[] = [];
+    let currentCount = 0;
+    let rangeStart = yLevels[0] ?? 0;
+
+    for (let i = 0; i < yLevels.length; i++) {
+      currentCount += blocksPerY.get(yLevels[i])!;
+      const isLast = i === yLevels.length - 1;
+      const reachedTarget = currentCount >= targetPerBot && botRanges.length < botNames.length - 1;
+
+      if (reachedTarget || isLast) {
+        botRanges.push({ yMin: rangeStart, yMax: yLevels[i], count: currentCount });
+        currentCount = 0;
+        if (i < yLevels.length - 1) rangeStart = yLevels[i + 1];
+      }
+    }
+
+    // If fewer ranges than bots (very flat schematic), only use needed bots
+    const assignments: BotAssignment[] = botNames.slice(0, botRanges.length).map((botName, idx) => {
+      const range = botRanges[idx];
+      const botBlocks = blocks.filter((b) => b.localY >= range.yMin && b.localY <= range.yMax);
       return {
         botName,
-        yMin,
-        yMax,
-        status: idx === 0 ? 'waiting' : 'waiting',
+        yMin: range.yMin,
+        yMax: range.yMax,
+        status: 'waiting' as const,
         blocksTotal: botBlocks.length,
         blocksPlaced: 0,
-        currentY: yMin,
+        currentY: range.yMin,
       } as BotAssignment;
     });
+
+    logger.info(
+      { assignments: assignments.map(a => ({ bot: a.botName, yMin: a.yMin, yMax: a.yMax, blocks: a.blocksTotal })) },
+      'Build work partitioned by block count',
+    );
 
     const jobId = crypto.randomUUID();
     const job: BuildJob = {
@@ -297,33 +325,28 @@ export class BuildCoordinator {
   ): Promise<void> {
     const job = this.jobs.get(jobId)!;
 
-    // Execute each assignment sequentially (bottom bot first, then next waits)
-    for (let i = 0; i < assignments.length; i++) {
-      const assignment = assignments[i];
-
-      // Check for cancellation before starting this bot
+    // Execute all bot assignments in parallel — each bot works on its Y range
+    const promises = assignments.map(async (assignment, i) => {
+      // Check for cancellation
       if (this.cancelledJobs.has(jobId)) return;
-
-      // If not the first bot, the previous bot must be completed
-      if (i > 0) {
-        const prev = assignments[i - 1];
-        if (prev.status !== 'completed') {
-          assignment.status = 'failed';
-          logger.warn(
-            { jobId, bot: assignment.botName },
-            'Previous bot did not complete; skipping',
-          );
-          continue;
-        }
-      }
 
       // Get the mineflayer bot instance
       const instance = this.botManager.getBot(assignment.botName);
       if (!instance || !instance.bot) {
         assignment.status = 'failed';
         logger.error({ jobId, bot: assignment.botName }, 'Bot not available for building');
-        continue;
+        return;
       }
+
+      // Pause voyager loop so the bot doesn't wander off
+      const voyager = instance.getVoyagerLoop();
+      if (voyager) voyager.pause('building');
+
+      // Stop any current pathfinding/movement
+      try {
+        instance.bot.pathfinder.stop();
+        instance.bot.clearControlStates();
+      } catch {}
 
       // Set bot state to BUILDING
       instance.state = BotState.BUILDING;
@@ -342,6 +365,9 @@ export class BuildCoordinator {
         (b) => b.localY >= assignment.yMin && b.localY <= assignment.yMax,
       );
 
+      // Stagger start by 2s per bot to avoid overwhelming server
+      if (i > 0) await new Promise((r) => setTimeout(r, i * 2000));
+
       try {
         await this.executeBotAssignment(jobId, job, assignment, instance.bot, botBlocks);
         assignment.status = 'completed';
@@ -350,8 +376,9 @@ export class BuildCoordinator {
         logger.error({ jobId, bot: assignment.botName, err: err.message }, 'Bot assignment failed');
       }
 
-      // Reset bot state
+      // Reset bot state and resume voyager
       instance.state = BotState.IDLE;
+      if (voyager) voyager.resume();
 
       this.io.emit('build:bot-status', {
         jobId,
@@ -359,7 +386,9 @@ export class BuildCoordinator {
         status: assignment.status,
         blocksPlaced: assignment.blocksPlaced,
       });
-    }
+    });
+
+    await Promise.all(promises);
 
     // Final status
     if (!this.cancelledJobs.has(jobId)) {
@@ -412,8 +441,8 @@ export class BuildCoordinator {
         `/setblock ${block.pos.x} ${block.pos.y} ${block.pos.z} minecraft:${blockSpec} replace`,
       );
 
-      // 50ms delay between blocks
-      await this.sleep(50);
+      // 250ms delay between blocks to avoid server spam kick
+      await this.sleep(250);
 
       assignment.blocksPlaced++;
       assignment.currentY = block.localY;

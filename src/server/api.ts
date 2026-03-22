@@ -373,6 +373,59 @@ export function createAPIServer(botManager: BotManager): APIServerResult {
     res.json({ success: true });
   });
 
+  // Pause bot voyager loop
+  app.post('/api/bots/:name/pause', (req: Request, res: Response) => {
+    const bot = botManager.getBot(req.params.name as string);
+    if (!bot) { res.status(404).json({ error: 'Bot not found' }); return; }
+    const voyager = bot.getVoyagerLoop();
+    if (!voyager) { res.status(400).json({ error: 'Bot not in codegen mode' }); return; }
+    voyager.pause('dashboard');
+    res.json({ success: true });
+  });
+
+  // Resume bot voyager loop
+  app.post('/api/bots/:name/resume', (req: Request, res: Response) => {
+    const bot = botManager.getBot(req.params.name as string);
+    if (!bot) { res.status(404).json({ error: 'Bot not found' }); return; }
+    const voyager = bot.getVoyagerLoop();
+    if (!voyager) { res.status(400).json({ error: 'Bot not in codegen mode' }); return; }
+    voyager.resume();
+    res.json({ success: true });
+  });
+
+  // Stop bot (cancel pathfinding)
+  app.post('/api/bots/:name/stop', (req: Request, res: Response) => {
+    const bot = botManager.getBot(req.params.name as string);
+    if (!bot || !bot.bot) { res.status(404).json({ error: 'Bot not found or not connected' }); return; }
+    bot.bot.pathfinder.stop();
+    res.json({ success: true });
+  });
+
+  // Follow a player
+  app.post('/api/bots/:name/follow', (req: Request, res: Response) => {
+    const { playerName } = req.body;
+    if (!playerName) { res.status(400).json({ error: 'playerName required' }); return; }
+    const bot = botManager.getBot(req.params.name as string);
+    if (!bot || !bot.bot) { res.status(404).json({ error: 'Bot not found or not connected' }); return; }
+    const player = bot.bot.players[playerName];
+    if (!player?.entity) { res.status(400).json({ error: 'Player not found or not in range' }); return; }
+    const { GoalFollow } = require('mineflayer-pathfinder').goals;
+    bot.bot.pathfinder.setGoal(new GoalFollow(player.entity, 2), true);
+    res.json({ success: true });
+  });
+
+  // Walk to coordinates
+  app.post('/api/bots/:name/walkto', (req: Request, res: Response) => {
+    const { x, z, y } = req.body;
+    if (typeof x !== 'number' || typeof z !== 'number') { res.status(400).json({ error: 'x and z required' }); return; }
+    const bot = botManager.getBot(req.params.name as string);
+    if (!bot || !bot.bot) { res.status(404).json({ error: 'Bot not found or not connected' }); return; }
+    const { GoalNear } = require('mineflayer-pathfinder').goals;
+    const targetY = typeof y === 'number' ? y : bot.bot.entity.position.y;
+    bot.bot.pathfinder.setGoal(new GoalNear(x, targetY, z, 2));
+    res.json({ success: true });
+  });
+
   // ═══════════════════════════════════════
   //  BUILD COORDINATOR + SCHEMATIC/BUILD ENDPOINTS
   // ═══════════════════════════════════════
