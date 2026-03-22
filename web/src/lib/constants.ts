@@ -87,4 +87,7 @@ export const EVENT_CONFIG: Record<string, { icon: string; label: string; color: 
   'bot:death': { icon: 'X', label: 'Death', color: '#EF4444' },
   'player:join': { icon: '+', label: 'Player Joined', color: '#60A5FA' },
   'player:leave': { icon: '-', label: 'Player Left', color: '#6B7280' },
+  'build:started': { icon: '\u25B6', label: 'Build Started', color: '#1ABC9C' },
+  'build:completed': { icon: '\u2713', label: 'Build Complete', color: '#10B981' },
+  'build:cancelled': { icon: '\u25A0', label: 'Build Cancelled', color: '#EF4444' },
 };

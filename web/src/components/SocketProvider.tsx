@@ -11,6 +11,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     updateInventory, pushEvent, setConnected, setWorld,
     setPlayers, updatePlayerPosition, addPlayer, removePlayer,
     incrementUnreadChats,
+    setActiveBuild, updateBuildProgress, updateBuildBotStatus,
   } = useBotStore();
 
   useEffect(() => {
@@ -86,6 +87,30 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       incrementUnreadChats();
     });
 
+    // Build events
+    socket.on('build:started', (data: any) => {
+      setActiveBuild(data.build ?? data);
+    });
+
+    socket.on('build:progress', (data: { buildId: string; botName: string; blocksPlaced: number; currentY: number }) => {
+      updateBuildProgress(data.buildId, data.botName, data.blocksPlaced, data.currentY);
+    });
+
+    socket.on('build:bot-status', (data: { buildId: string; botName: string; status: string }) => {
+      updateBuildBotStatus(data.buildId, data.botName, data.status);
+    });
+
+    socket.on('build:completed', (data: { buildId: string }) => {
+      const current = useBotStore.getState().activeBuild;
+      if (current && current.id === data.buildId) {
+        setActiveBuild({ ...current, status: 'completed' });
+      }
+    });
+
+    socket.on('build:cancelled', () => {
+      setActiveBuild(null);
+    });
+
     return () => {
       clearInterval(pollInterval);
       clearInterval(worldInterval);
@@ -103,12 +128,18 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       socket.off('player:join');
       socket.off('player:leave');
       socket.off('bot:chat');
+      socket.off('build:started');
+      socket.off('build:progress');
+      socket.off('build:bot-status');
+      socket.off('build:completed');
+      socket.off('build:cancelled');
     };
   }, [
     setBots, updatePosition, updateHealth, updateState,
     updateInventory, pushEvent, setConnected, setWorld,
     setPlayers, updatePlayerPosition, addPlayer, removePlayer,
     incrementUnreadChats,
+    setActiveBuild, updateBuildProgress, updateBuildBotStatus,
   ]);
 
   return <>{children}</>;

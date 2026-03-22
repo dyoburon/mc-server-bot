@@ -6,12 +6,14 @@ import { BotManager } from '../bot/BotManager';
 import { BotInstance } from '../bot/BotInstance';
 import { EventLog, BotEvent } from './EventLog';
 import { logger } from '../util/logger';
+import { BuildCoordinator } from '../build/BuildCoordinator';
 
 export interface APIServerResult {
   app: express.Application;
   httpServer: http.Server;
   io: SocketIOServer;
   eventLog: EventLog;
+  buildCoordinator: BuildCoordinator;
 }
 
 export function createAPIServer(botManager: BotManager): APIServerResult {
@@ -369,5 +371,106 @@ export function createAPIServer(botManager: BotManager): APIServerResult {
     res.json({ success: true });
   });
 
-  return { app, httpServer, io, eventLog };
+  // ═══════════════════════════════════════
+  //  BUILD COORDINATOR + SCHEMATIC/BUILD ENDPOINTS
+  // ═══════════════════════════════════════
+
+  const buildCoordinator = new BuildCoordinator(botManager, io, eventLog);
+
+  // List all available schematics
+  app.get('/api/schematics', async (_req: Request, res: Response) => {
+    try {
+      const schematics = buildCoordinator.listSchematics();
+      res.json({ schematics });
+    } catch (err: any) {
+      logger.error({ err }, 'Failed to list schematics');
+      res.status(500).json({ error: 'Failed to list schematics' });
+    }
+  });
+
+  // Get single schematic info
+  app.get('/api/schematics/:filename', async (req: Request, res: Response) => {
+    try {
+      const info = await buildCoordinator.getSchematicInfoAsync(req.params.filename as string);
+      if (!info) {
+        res.status(404).json({ error: 'Schematic not found' });
+        return;
+      }
+      res.json({ schematic: info });
+    } catch (err: any) {
+      logger.error({ err, filename: req.params.filename }, 'Failed to get schematic info');
+      res.status(500).json({ error: 'Failed to get schematic info' });
+    }
+  });
+
+  // Start a multi-bot build
+  app.post('/api/builds', async (req: Request, res: Response) => {
+    const { schematicFile, origin, botNames } = req.body;
+
+    if (!schematicFile || !origin || !botNames || !Array.isArray(botNames) || botNames.length === 0) {
+      res.status(400).json({ error: 'schematicFile, origin {x,y,z}, and botNames[] are required' });
+      return;
+    }
+
+    if (typeof origin.x !== 'number' || typeof origin.y !== 'number' || typeof origin.z !== 'number') {
+      res.status(400).json({ error: 'origin must have numeric x, y, z fields' });
+      return;
+    }
+
+    try {
+      const job = await buildCoordinator.startBuild(schematicFile, origin, botNames);
+      res.status(201).json({ job });
+    } catch (err: any) {
+      logger.error({ err }, 'Failed to start build');
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // List all build jobs
+  app.get('/api/builds', (_req: Request, res: Response) => {
+    const jobs = buildCoordinator.getAllBuildJobs();
+    res.json({ builds: jobs });
+  });
+
+  // Get single build job
+  app.get('/api/builds/:id', (req: Request, res: Response) => {
+    const job = buildCoordinator.getBuildJob(req.params.id as string);
+    if (!job) {
+      res.status(404).json({ error: 'Build job not found' });
+      return;
+    }
+    res.json({ build: job });
+  });
+
+  // Cancel a build
+  app.post('/api/builds/:id/cancel', (req: Request, res: Response) => {
+    const success = buildCoordinator.cancelBuild(req.params.id as string);
+    if (!success) {
+      res.status(404).json({ error: 'Build not found or already finished' });
+      return;
+    }
+    res.json({ success: true });
+  });
+
+  // Pause a build
+  app.post('/api/builds/:id/pause', (req: Request, res: Response) => {
+    const success = buildCoordinator.pauseBuild(req.params.id as string);
+    if (!success) {
+      res.status(404).json({ error: 'Build not found or not running' });
+      return;
+    }
+    res.json({ success: true });
+  });
+
+  // Resume a build
+  app.post('/api/builds/:id/resume', (req: Request, res: Response) => {
+    const success = buildCoordinator.resumeBuild(req.params.id as string);
+    if (!success) {
+      res.status(404).json({ error: 'Build not found or not paused' });
+      return;
+    }
+    res.json({ success: true });
+  });
+
+  return { app, httpServer, io, eventLog, buildCoordinator };
 }

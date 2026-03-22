@@ -1,7 +1,7 @@
 'use client';
 
 import { create } from 'zustand';
-import type { BotStatus, BotEvent, WorldState } from './api';
+import type { BotStatus, BotEvent, WorldState, BuildJob } from './api';
 
 export interface BotLiveData extends BotStatus {
   health?: number;
@@ -39,6 +39,10 @@ interface BotStore {
   removePlayer: (name: string) => void;
   incrementUnreadChats: () => void;
   resetUnreadChats: () => void;
+  activeBuild: BuildJob | null;
+  setActiveBuild: (build: BuildJob | null) => void;
+  updateBuildProgress: (buildId: string, botName: string, blocksPlaced: number, currentY: number) => void;
+  updateBuildBotStatus: (buildId: string, botName: string, status: string) => void;
 }
 
 function toBotList(byId: Record<string, BotLiveData>): BotLiveData[] {
@@ -138,4 +142,31 @@ export const useBotStore = create<BotStore>((set) => ({
     set((state) => ({ unreadChats: state.unreadChats + 1 })),
 
   resetUnreadChats: () => set({ unreadChats: 0 }),
+
+  activeBuild: null,
+
+  setActiveBuild: (build) => set({ activeBuild: build }),
+
+  updateBuildProgress: (buildId, botName, blocksPlaced, currentY) =>
+    set((state) => {
+      if (!state.activeBuild || state.activeBuild.id !== buildId) return {};
+      const assignments = state.activeBuild.assignments.map((a) =>
+        a.botName === botName ? { ...a, blocksPlaced, currentY } : a,
+      );
+      const totalPlaced = assignments.reduce((sum, a) => sum + a.blocksPlaced, 0);
+      return {
+        activeBuild: { ...state.activeBuild, assignments, placedBlocks: totalPlaced },
+      };
+    }),
+
+  updateBuildBotStatus: (buildId, botName, status) =>
+    set((state) => {
+      if (!state.activeBuild || state.activeBuild.id !== buildId) return {};
+      const assignments = state.activeBuild.assignments.map((a) =>
+        a.botName === botName ? { ...a, status: status as any } : a,
+      );
+      return {
+        activeBuild: { ...state.activeBuild, assignments },
+      };
+    }),
 }));

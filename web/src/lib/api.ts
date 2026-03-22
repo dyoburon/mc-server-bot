@@ -133,6 +133,33 @@ export interface TerrainData {
   blocks: string[];
 }
 
+export interface SchematicInfo {
+  filename: string;
+  size: { x: number; y: number; z: number };
+  blockCount: number;
+}
+
+export interface BotAssignment {
+  botName: string;
+  yMin: number;
+  yMax: number;
+  status: 'waiting' | 'building' | 'completed' | 'failed';
+  blocksTotal: number;
+  blocksPlaced: number;
+  currentY: number;
+}
+
+export interface BuildJob {
+  id: string;
+  schematicFile: string;
+  origin: { x: number; y: number; z: number };
+  status: 'pending' | 'running' | 'paused' | 'completed' | 'cancelled' | 'failed';
+  createdAt: number;
+  totalBlocks: number;
+  placedBlocks: number;
+  assignments: BotAssignment[];
+}
+
 // API functions
 export const api = {
   // Bots
@@ -204,4 +231,18 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ x, y, z }),
     }),
+
+  // Schematics & Builds
+  getSchematics: () => fetchJSON<{ schematics: SchematicInfo[] }>('/api/schematics'),
+  getSchematic: (filename: string) => fetchJSON<{ schematic: SchematicInfo }>(`/api/schematics/${encodeURIComponent(filename)}`),
+  getBuilds: () => fetchJSON<{ builds: BuildJob[] }>('/api/builds'),
+  getBuild: (id: string) => fetchJSON<{ build: BuildJob }>(`/api/builds/${id}`),
+  startBuild: (schematicFile: string, origin: { x: number; y: number; z: number }, botNames: string[]) =>
+    fetchJSON<{ success: boolean; build: BuildJob }>('/api/builds', {
+      method: 'POST',
+      body: JSON.stringify({ schematicFile, origin, botNames }),
+    }),
+  cancelBuild: (id: string) => fetchJSON<{ success: boolean }>(`/api/builds/${id}/cancel`, { method: 'POST' }),
+  pauseBuild: (id: string) => fetchJSON<{ success: boolean }>(`/api/builds/${id}/pause`, { method: 'POST' }),
+  resumeBuild: (id: string) => fetchJSON<{ success: boolean }>(`/api/builds/${id}/resume`, { method: 'POST' }),
 };
