@@ -1150,6 +1150,33 @@ export class BotInstance {
     };
   }
 
+  getDiagnosticsSummary() {
+    return {
+      name: this.name,
+      personality: this.personality,
+      mode: this.mode,
+      state: this.state,
+      position: this.bot?.entity?.position
+        ? {
+            x: Math.round(this.bot.entity.position.x),
+            y: Math.round(this.bot.entity.position.y),
+            z: Math.round(this.bot.entity.position.z),
+          }
+        : null,
+      health: this.bot?.health ?? 0,
+      food: this.bot?.food ?? 0,
+      voyager: this.voyagerLoop
+        ? {
+            isRunning: this.voyagerLoop.isRunning(),
+            isPaused: this.voyagerLoop.isPaused(),
+            currentTask: this.voyagerLoop.getCurrentTask(),
+            queuedTasks: this.voyagerLoop.getQueuedTasks().length,
+            lastExecution: this.voyagerLoop.getLastExecutionMetrics(),
+          }
+        : null,
+    };
+  }
+
   /** Expose internal managers for API layer */
   getAffinityManager(): AffinityManager {
     return this.affinityManager;

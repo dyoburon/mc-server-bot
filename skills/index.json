@@ -10054,6 +10054,9 @@
     ]
   },
   {
+    "quality": 0.9,
+    "successCount": 3,
+    "failureCount": 0,
     "name": "craft_1_crafting_table",
     "description": "Craft 1 crafting table",
     "keywords": [
@@ -10062,9 +10065,6 @@
       "table"
     ],
     "file": "craft_1_crafting_table.js",
-    "quality": 0.9,
-    "successCount": 3,
-    "failureCount": 0,
     "embedding": [
       -0.013768034,
       0.010399985,
@@ -14153,6 +14153,9 @@
     "file": "mine_5_shortgrass_to_get.js"
   },
   {
+    "quality": 0.8,
+    "successCount": 1,
+    "failureCount": 0,
     "name": "mine_20_oak_logs",
     "description": "Mine 20 oak logs",
     "keywords": [
@@ -14160,12 +14163,12 @@
       "oak",
       "logs"
     ],
-    "file": "mine_20_oak_logs.js",
-    "quality": 0.8,
-    "successCount": 1,
-    "failureCount": 0
+    "file": "mine_20_oak_logs.js"
   },
   {
+    "quality": 0.8,
+    "successCount": 1,
+    "failureCount": 0,
     "name": "build_a_5x5_house_using",
     "description": "Build a 5x5 house using oak planks and an oak door",
     "keywords": [
@@ -14179,12 +14182,12 @@
       "oak",
       "door"
     ],
-    "file": "build_a_5x5_house_using.js",
-    "quality": 0.8,
-    "successCount": 1,
-    "failureCount": 0
+    "file": "build_a_5x5_house_using.js"
   },
   {
+    "quality": 0.9,
+    "successCount": 1,
+    "failureCount": 0,
     "name": "craft_40_oak_planks",
     "description": "Craft 40 oak planks",
     "keywords": [
@@ -14192,12 +14195,12 @@
       "oak",
       "planks"
     ],
-    "file": "craft_40_oak_planks.js",
-    "quality": 0.9,
-    "successCount": 1,
-    "failureCount": 0
+    "file": "craft_40_oak_planks.js"
   },
   {
+    "quality": 0.8,
+    "successCount": 1,
+    "failureCount": 0,
     "name": "idleandlookaround",
     "description": "idle_and_look_around",
     "keywords": [
@@ -14205,12 +14208,12 @@
       "guard",
       "watch"
     ],
-    "file": "idleandlookaround.js",
-    "quality": 0.8,
-    "successCount": 1,
-    "failureCount": 0
+    "file": "idleandlookaround.js"
   },
   {
+    "quality": 0.8,
+    "successCount": 1,
+    "failureCount": 0,
     "name": "patrolsquare",
     "description": "patrol_square",
     "keywords": [
@@ -14218,7 +14221,68 @@
       "guard",
       "security"
     ],
-    "file": "patrolsquare.js",
+    "file": "patrolsquare.js"
+  },
+  {
+    "quality": 0.9,
+    "successCount": 1,
+    "failureCount": 0,
+    "name": "craft_4_oak_planks",
+    "description": "Craft 4 oak planks",
+    "keywords": [
+      "craft",
+      "oak_planks",
+      "wood"
+    ],
+    "file": "craft_4_oak_planks.js"
+  },
+  {
+    "quality": 0.8,
+    "successCount": 1,
+    "failureCount": 0,
+    "name": "findawatersource",
+    "description": "find_a_water_source",
+    "keywords": [
+      "find",
+      "water",
+      "source"
+    ],
+    "file": "findawatersource.js"
+  },
+  {
+    "quality": 0.9,
+    "successCount": 1,
+    "failureCount": 0,
+    "name": "mine_1_brownmushroom",
+    "description": "Mine 1 brown_mushroom",
+    "keywords": [
+      "mine",
+      "brown_mushroom"
+    ],
+    "file": "mine_1_brownmushroom.js"
+  },
+  {
+    "quality": 0.8,
+    "successCount": 1,
+    "failureCount": 0,
+    "name": "mine_1_dirt_block",
+    "description": "Mine 1 dirt block",
+    "keywords": [
+      "mine",
+      "dirt",
+      "block"
+    ],
+    "file": "mine_1_dirt_block.js"
+  },
+  {
+    "name": "build_me_a_dirt_house",
+    "description": "build me a dirt house",
+    "keywords": [
+      "build",
+      "dirt",
+      "house"
+    ],
+    "file": "build_me_a_dirt_house.js",
     "quality": 0.8,
     "successCount": 1,
     "failureCount": 0

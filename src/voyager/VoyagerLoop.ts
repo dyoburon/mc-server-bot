@@ -30,6 +30,16 @@ export class VoyagerLoop {
   private running = false;
   private paused = false;
   private loopTimeout: NodeJS.Timeout | null = null;
+  private lastExecutionMetrics: {
+    attempt: number;
+    task: string;
+    success: boolean;
+    outputLength: number;
+    eventCount: number;
+    eventLogLength: number;
+    codeLength: number;
+    timestamp: number;
+  } | null = null;
   private playerTaskQueue: Task[] = [];
   private activeLongTermGoal: LongTermGoal | null = null;
   private blackboardManager: BlackboardManager | null = null;
@@ -148,6 +158,10 @@ export class VoyagerLoop {
       completedSubtasks: [...this.activeLongTermGoal.completedSubtasks],
       updatedAt: this.activeLongTermGoal.updatedAt,
     };
+  }
+
+  getLastExecutionMetrics() {
+    return this.lastExecutionMetrics;
   }
 
   /** Get the skill library instance */
@@ -632,6 +646,16 @@ export class VoyagerLoop {
       }, 'Execution result details');
       this.statsTracker.trackExecution(this.botName, execResult.events);
       eventLog = execResult.events.map((event) => `${event.type}: ${event.message}`).join(' | ');
+      this.lastExecutionMetrics = {
+        attempt: attempt + 1,
+        task: task.description,
+        success: execResult.success,
+        outputLength: execResult.output.length,
+        eventCount: execResult.events.length,
+        eventLogLength: eventLog.length,
+        codeLength: generated.functionCode.length,
+        timestamp: Date.now(),
+      };
 
       // Wait for actions to settle
       await new Promise((r) => setTimeout(r, 2000));

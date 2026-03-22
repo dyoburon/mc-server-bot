@@ -108,6 +108,14 @@ export class BotManager {
     return [...this.bots.values()];
   }
 
+  getDiagnosticsSnapshot() {
+    const bots = this.getAllBots().map((bot) => bot.getDiagnosticsSummary());
+    return {
+      totalBots: bots.length,
+      bots,
+    };
+  }
+
   getAffinityManager(): AffinityManager {
     return this.affinityManager;
   }
