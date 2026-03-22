@@ -291,6 +291,8 @@ export class BotInstance {
 
     this.headTrackingInterval = setInterval(() => {
       if (!this.bot || this.state === BotState.DISCONNECTED) return;
+      if (this.mode === BotMode.CODEGEN && this.voyagerLoop?.getCurrentTask()) return;
+      if (this.state === BotState.EXECUTING_TASK) return;
 
       const players = Object.values(this.bot.players).filter(
         (p) => p.entity && p.username !== this.bot!.username
@@ -876,6 +878,9 @@ export class BotInstance {
 
     // Voyager state
     let voyager = null;
+    const effectiveState = this.voyagerLoop?.isRunning() && this.voyagerLoop.getCurrentTask()
+      ? BotState.EXECUTING_TASK
+      : this.state;
     if (this.voyagerLoop) {
       voyager = {
         isRunning: this.voyagerLoop.isRunning(),
@@ -890,6 +895,7 @@ export class BotInstance {
 
     return {
       ...basic,
+      state: effectiveState,
       personalityDisplayName: PERSONALITIES[this.personality]?.displayName ?? this.personality,
       health: this.bot.health,
       food: this.bot.food,

@@ -1,20 +1,8 @@
-async function craftWoodenHoe(bot) {
-  const hoe = bot.inventory.items().find(i => i.name === 'wooden_hoe');
-  if (hoe) return;
-  let planks = bot.inventory.items().find(i => i.name.endsWith('_planks'));
-  if (!planks || planks.count < 2) {
-    let logs = bot.inventory.items().find(i => i.name.endsWith('_log'));
-    if (!logs) {
-      await mineBlock('oak_log', 1);
-      logs = bot.inventory.items().find(i => i.name.endsWith('_log'));
-    }
-    if (logs) {
-      await craftItem(logs.name.replace('_log', '_planks'), 1);
-    }
-  }
-  let sticks = bot.inventory.items().find(i => i.name === 'stick');
-  if (!sticks || sticks.count < 2) {
-    await craftItem('stick', 1);
+async function craftOneFurnace(bot) {
+  let cobblestone = bot.inventory.items().find(i => i.name === 'cobblestone');
+  let cobbleCount = cobblestone ? cobblestone.count : 0;
+  if (cobbleCount < 8) {
+    await mineBlock('stone', 8 - cobbleCount);
   }
   let tableBlock = bot.findBlock({
     matching: b => b.name === 'crafting_table',
@@ -23,6 +11,11 @@ async function craftWoodenHoe(bot) {
   if (!tableBlock) {
     let tableItem = bot.inventory.items().find(i => i.name === 'crafting_table');
     if (!tableItem) {
+      let planks = bot.inventory.items().find(i => i.name.endsWith('_planks'));
+      if (!planks || planks.count < 4) {
+        await mineBlock('oak_log', 1);
+        await craftItem('oak_planks', 1);
+      }
       await craftItem('crafting_table', 1);
     }
     const refBlock = bot.findBlock({
@@ -39,5 +32,5 @@ async function craftWoodenHoe(bot) {
   if (tableBlock) {
     await moveTo(tableBlock.position.x, tableBlock.position.y, tableBlock.position.z, 3);
   }
-  await craftItem('wooden_hoe', 1);
+  await craftItem('furnace', 1);
 }

@@ -299,9 +299,6 @@
     "file": "explore_and_find_wheat_seeds.js"
   },
   {
-    "quality": 0.7,
-    "successCount": 0,
-    "failureCount": 0,
     "name": "craft_a_wooden_hoe",
     "description": "Craft a wooden hoe",
     "keywords": [
@@ -309,7 +306,10 @@
       "hoe",
       "wood"
     ],
-    "file": "craft_a_wooden_hoe.js"
+    "file": "craft_a_wooden_hoe.js",
+    "quality": 0.9,
+    "successCount": 1,
+    "failureCount": 0
   },
   {
     "quality": 0.7,
@@ -469,6 +469,9 @@
     "file": "mine3blocksofgrass.js"
   },
   {
+    "quality": 0.9,
+    "successCount": 5,
+    "failureCount": 0,
     "name": "craft_20_spruce_planks",
     "description": "Craft 20 spruce planks",
     "keywords": [
@@ -476,12 +479,12 @@
       "spruce_planks",
       "wood"
     ],
-    "file": "craft_20_spruce_planks.js",
-    "quality": 0.9,
-    "successCount": 5,
-    "failureCount": 0
+    "file": "craft_20_spruce_planks.js"
   },
   {
+    "quality": 0.9,
+    "successCount": 1,
+    "failureCount": 0,
     "name": "mine_6_spruce_logs",
     "description": "Mine 6 spruce logs",
     "keywords": [
@@ -489,8 +492,183 @@
       "spruce_log",
       "wood"
     ],
-    "file": "mine_6_spruce_logs.js",
+    "file": "mine_6_spruce_logs.js"
+  },
+  {
+    "quality": 0.8,
+    "successCount": 1,
+    "failureCount": 0,
+    "name": "mine_5_short_grass_to",
+    "description": "Mine 5 short grass to find wheat seeds",
+    "keywords": [
+      "mine",
+      "short_grass",
+      "wheat_seeds"
+    ],
+    "file": "mine_5_short_grass_to.js"
+  },
+  {
+    "name": "craft_1_crafting_table",
+    "description": "Craft 1 crafting table",
+    "keywords": [
+      "craft",
+      "crafting table",
+      "spruce planks"
+    ],
+    "file": "craft_1_crafting_table.js",
     "quality": 0.9,
+    "successCount": 2,
+    "failureCount": 0
+  },
+  {
+    "quality": 0.8,
+    "successCount": 1,
+    "failureCount": 0,
+    "name": "mine_10_short_grass_to",
+    "description": "Mine 10 short grass to collect wheat seeds",
+    "keywords": [
+      "mine",
+      "short_grass",
+      "seeds"
+    ],
+    "file": "mine_10_short_grass_to.js"
+  },
+  {
+    "name": "craft_16_spruce_planks",
+    "description": "Craft 16 spruce planks",
+    "keywords": [
+      "craft",
+      "spruce_planks"
+    ],
+    "file": "craft_16_spruce_planks.js",
+    "quality": 0.9,
+    "successCount": 1,
+    "failureCount": 0
+  },
+  {
+    "name": "mine_5_clay_blocks",
+    "description": "Mine 5 clay blocks",
+    "keywords": [
+      "mine",
+      "clay"
+    ],
+    "file": "mine_5_clay_blocks.js",
+    "quality": 0.8,
+    "successCount": 1,
+    "failureCount": 0
+  },
+  {
+    "name": "mine_5_kelp_plants",
+    "description": "Mine 5 kelp plants",
+    "keywords": [
+      "mine",
+      "kelp",
+      "water"
+    ],
+    "file": "mine_5_kelp_plants.js",
+    "quality": 0.8,
+    "successCount": 1,
+    "failureCount": 0
+  },
+  {
+    "name": "mine_5_dirt_blocks",
+    "description": "Mine 5 dirt blocks",
+    "keywords": [
+      "mine",
+      "dirt",
+      "farm"
+    ],
+    "file": "mine_5_dirt_blocks.js",
+    "quality": 0.8,
+    "successCount": 1,
+    "failureCount": 0
+  },
+  {
+    "name": "mine_3_iron_ore_at",
+    "description": "Mine 3 iron ore at 1734, 46, 427",
+    "keywords": [
+      "mine",
+      "iron_ore"
+    ],
+    "file": "mine_3_iron_ore_at.js",
+    "quality": 0.8,
+    "successCount": 2,
+    "failureCount": 0
+  },
+  {
+    "name": "craft_1_furnace",
+    "description": "Craft 1 furnace",
+    "keywords": [
+      "craft",
+      "furnace"
+    ],
+    "file": "craft_1_furnace.js",
+    "quality": 0.9,
+    "successCount": 2,
+    "failureCount": 0
+  },
+  {
+    "name": "place_1_dirt_block",
+    "description": "Place 1 dirt block",
+    "keywords": [
+      "place",
+      "dirt",
+      "block"
+    ],
+    "file": "place_1_dirt_block.js",
+    "quality": 0.8,
+    "successCount": 1,
+    "failureCount": 0
+  },
+  {
+    "name": "place_1_furnace",
+    "description": "Place 1 furnace",
+    "keywords": [
+      "furnace",
+      "place",
+      "iron"
+    ],
+    "file": "place_1_furnace.js",
+    "quality": 0.8,
+    "successCount": 2,
+    "failureCount": 0
+  },
+  {
+    "name": "craft_1_stone_pickaxe",
+    "description": "Craft 1 stone pickaxe",
+    "keywords": [
+      "craft",
+      "stone_pickaxe",
+      "cobblestone",
+      "stick"
+    ],
+    "file": "craft_1_stone_pickaxe.js",
+    "quality": 0.9,
+    "successCount": 2,
+    "failureCount": 0
+  },
+  {
+    "name": "mine_1_spruce_log",
+    "description": "Mine 1 spruce log",
+    "keywords": [
+      "mine",
+      "spruce_log",
+      "wood"
+    ],
+    "file": "mine_1_spruce_log.js",
+    "quality": 0.8,
+    "successCount": 1,
+    "failureCount": 0
+  },
+  {
+    "name": "mine_1_iron_ore_at",
+    "description": "Mine 1 iron ore at 1744, 34, 437",
+    "keywords": [
+      "mine",
+      "iron_ore"
+    ],
+    "file": "mine_1_iron_ore_at.js",
+    "quality": 0.8,
     "successCount": 1,
     "failureCount": 0
   }
