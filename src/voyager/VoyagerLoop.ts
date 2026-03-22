@@ -14,6 +14,7 @@ import { completeLongTermSubtask, goalSummary, LongTermGoal, longTermGoalToTask,
 import { countBlueprintMaterials, generateSimpleHouseBlueprint, getMissingBlueprintPlacements, validateBlueprint } from './Blueprint';
 import { placeBlock } from '../actions/placeBlock';
 import { Vec3 } from 'vec3';
+import { BlackboardManager, BlackboardTask } from './BlackboardManager';
 
 export class VoyagerLoop {
   private bot: Bot;
@@ -31,6 +32,8 @@ export class VoyagerLoop {
   private loopTimeout: NodeJS.Timeout | null = null;
   private playerTaskQueue: Task[] = [];
   private activeLongTermGoal: LongTermGoal | null = null;
+  private blackboardManager: BlackboardManager | null = null;
+  private activeBlackboardTask: BlackboardTask | null = null;
 
   // Exposed state for chat context
   private currentTask: string | null = null;
@@ -152,6 +155,14 @@ export class VoyagerLoop {
     return this.skillLibrary;
   }
 
+  setBlackboardManager(manager: BlackboardManager): void {
+    this.blackboardManager = manager;
+  }
+
+  getBlackboardManager(): BlackboardManager | null {
+    return this.blackboardManager;
+  }
+
   /** Returns a short summary of what the bot is currently doing, for chat context. */
   getInternalState(): string {
     const parts: string[] = [];
@@ -182,6 +193,21 @@ export class VoyagerLoop {
     });
   }
 
+  async queueSwarmGoal(description: string, requestedBy: string): Promise<void> {
+    const subtasks = await this.curriculumAgent.decomposeTask(this.bot, description);
+    this.blackboardManager?.setSwarmGoal(description, requestedBy, subtasks);
+    logger.info({ bot: this.botName, goal: description, requestedBy, subtasks: subtasks.map((t) => t.description) }, 'Swarm goal set');
+  }
+
+  overrideWithSwarmDirective(description: string, requestedBy: string): void {
+    this.activeLongTermGoal = null;
+    this.playerTaskQueue = [];
+    this.activeBlackboardTask = null;
+    this.codeExecutor.requestInterrupt(`swarm override: ${description}`);
+    this.blackboardManager?.postMessage(this.botName, 'info', `Yielding to swarm directive from ${requestedBy}: ${description}`);
+    logger.info({ bot: this.botName, goal: description, requestedBy }, 'Local directives cleared for swarm override');
+  }
+
   queuePlayerTask(description: string, requestedBy: string): void {
     // Decompose asynchronously — subtasks get queued when ready
     this.decomposeAndQueue(description, requestedBy).catch((err) => {
@@ -206,6 +232,7 @@ export class VoyagerLoop {
       requestedBy,
       subtasks: subtasks.map((t) => t.description),
     }, subtasks.length > 1 ? 'Player goal decomposed and queued' : 'Player task queued');
+    this.blackboardManager?.postMessage(this.botName, 'info', `Queued local task: ${description}`);
   }
 
   private async decomposeAndSetLongTermGoal(description: string, requestedBy: string): Promise<void> {
@@ -222,6 +249,7 @@ export class VoyagerLoop {
       goal.origin = this.findGroundedBuildOrigin();
       goal.buildState = 'blueprint_ready';
       this.activeLongTermGoal = goal;
+      this.blackboardManager?.setBotGoal(this.botName, goal);
       logger.info({
         bot: this.botName,
         goal: description,
@@ -236,6 +264,7 @@ export class VoyagerLoop {
     const subtasks = await this.curriculumAgent.decomposeTask(this.bot, description);
     goal.pendingSubtasks = subtasks;
     this.activeLongTermGoal = goal;
+    this.blackboardManager?.setBotGoal(this.botName, goal);
     logger.info({
       bot: this.botName,
       goal: description,
@@ -268,8 +297,13 @@ export class VoyagerLoop {
     }
     // 1. Get task from player queue or curriculum
     const goalTask = this.activeLongTermGoal ? longTermGoalToTask(this.activeLongTermGoal) : null;
+    const blackboardTask = !goalTask ? this.blackboardManager?.claimBestTask(this.botName, this.currentTask || this.personality) || null : null;
+    this.activeBlackboardTask = blackboardTask;
     const playerTask = goalTask || this.playerTaskQueue.shift();
-    const task = playerTask || await this.curriculumAgent.proposeTask(
+    const task = goalTask
+      || playerTask
+      || (blackboardTask ? { description: blackboardTask.description, keywords: blackboardTask.keywords } : null)
+      || await this.curriculumAgent.proposeTask(
       this.bot,
       this.personality,
       this.skillLibrary
@@ -282,13 +316,19 @@ export class VoyagerLoop {
     logger.info({
       bot: this.botName,
       task: task.description,
-      source: goalTask ? 'long-term-goal' : playerTask ? 'player-request' : 'autonomous',
+      source: goalTask ? 'long-term-goal' : playerTask ? 'player-request' : blackboardTask ? 'blackboard' : 'autonomous',
       plan: plan.steps.map((step) => step.description),
     }, 'Voyager task proposed');
 
     for (const step of plan.steps) {
       const ok = await this.executeTaskStep(step);
       if (!ok) {
+        // If the failure was caused by an instinct pause (damage), don't treat it as
+        // a real failure — just bail out so the goal resumes when instinct ends.
+        if (this.paused) {
+          this.currentTask = null;
+          return;
+        }
         const blockers = this.curriculumAgent.getBlockerMemory().getTaskBlockers({ description: step.description, keywords: step.keywords, spec: step.spec });
         const replanned = replanTaskStep({ description: step.description, keywords: step.keywords, spec: step.spec }, blockers, this.curriculumAgent.getWorldMemory());
         if (replanned) {
@@ -306,6 +346,10 @@ export class VoyagerLoop {
           this.activeLongTermGoal.status = 'blocked';
           this.activeLongTermGoal.updatedAt = Date.now();
         }
+        if (this.activeBlackboardTask) {
+          this.blackboardManager?.blockTask(this.activeBlackboardTask.description, this.botName, 'step failed');
+          this.activeBlackboardTask = null;
+        }
         this.currentTask = null;
         return;
       }
@@ -317,6 +361,10 @@ export class VoyagerLoop {
         logger.info({ bot: this.botName, goal: this.activeLongTermGoal.rawRequest }, 'Long-term goal completed');
         this.activeLongTermGoal = null;
       }
+    }
+    if (this.activeBlackboardTask) {
+      this.blackboardManager?.completeTask(this.activeBlackboardTask.description, this.botName);
+      this.activeBlackboardTask = null;
     }
     this.currentTask = null;
   }
@@ -338,7 +386,8 @@ export class VoyagerLoop {
       return;
     }
 
-    const batch = missing.slice(0, 8);
+    const reservable = missing.filter((placement) => this.tryReserveBuildCell(goal.id, placement.x, placement.y, placement.z));
+    const batch = (reservable.length > 0 ? reservable : missing).slice(0, 8);
     const inventoryCounts = new Map<string, number>();
     for (const item of this.bot.inventory.items()) {
       inventoryCounts.set(item.name, (inventoryCounts.get(item.name) || 0) + item.count);
@@ -375,6 +424,7 @@ export class VoyagerLoop {
     if (placedCount > 0) {
       logger.info({ bot: this.botName, placedCount, remaining: missing.length - placedCount, goal: goal.rawRequest }, 'Build goal placed blueprint blocks');
       goal.updatedAt = Date.now();
+      this.releaseBuildReservations(goal.id);
       this.currentTask = null;
       return;
     }
@@ -391,10 +441,16 @@ export class VoyagerLoop {
       logger.info({ bot: this.botName, neededBlock, task: gatherTask.description, error: lastError }, 'Build goal executing resource gathering task');
       const gatherOk = await this.executeTaskStep({ description: gatherTask.description, keywords: gatherTask.keywords, spec: gatherTask.spec });
       if (!gatherOk) {
+        // If paused by instinct (damage), don't mark the build goal as blocked
+        if (this.paused) {
+          this.currentTask = null;
+          return;
+        }
         goal.status = 'blocked';
         goal.buildState = 'blocked';
         logger.warn({ bot: this.botName, goal: goal.rawRequest, gatherTask: gatherTask.description }, 'Build goal blocked while gathering resources');
       }
+      this.releaseBuildReservations(goal.id);
       this.currentTask = null;
       return;
     }
@@ -402,6 +458,7 @@ export class VoyagerLoop {
     goal.status = 'blocked';
     goal.buildState = 'blocked';
     logger.warn({ bot: this.botName, goal: goal.rawRequest, error: lastError }, 'Build goal blocked');
+    this.releaseBuildReservations(goal.id);
     this.currentTask = null;
   }
 
@@ -490,9 +547,19 @@ export class VoyagerLoop {
     return 'oak_planks';
   }
 
+  private tryReserveBuildCell(goalId: string, x: number, y: number, z: number): boolean {
+    if (!this.blackboardManager) return true;
+    return this.blackboardManager.claimReservation('build-cell', `${goalId}:${x},${y},${z}`, this.botName, goalId, 45000);
+  }
+
+  private releaseBuildReservations(goalId: string): void {
+    this.blackboardManager?.releaseReservationsForBot(this.botName, `${goalId}:`);
+  }
+
   private async executeTaskStep(step: PlannedStep): Promise<boolean> {
     const task: Task = { description: step.description, keywords: step.keywords, spec: step.spec };
     this.currentTask = task.description;
+    this.blackboardManager?.postMessage(this.botName, 'progress', `Working on ${task.description}.`);
 
     // 2. Try the best existing skill first, then fall back to fresh generation
     if (!this.actionAgent) {
@@ -518,9 +585,14 @@ export class VoyagerLoop {
       composableSkills: composableSkills.map((skill) => ({ name: skill.name, score: skill.score })),
       functionName: generated.functionName,
       codeLength: generated.functionCode.length,
-      code: generated.functionCode,
       execCode: generated.execCode,
     }, useDirectSkill ? 'Reusing saved skill' : 'Code generated by ActionAgent');
+
+    logger.debug({
+      bot: this.botName,
+      functionName: generated.functionName,
+      code: generated.functionCode,
+    }, 'Generated code body');
 
     // 3. Execute with retries
     let lastError: string | undefined;
@@ -549,9 +621,15 @@ export class VoyagerLoop {
         bot: this.botName,
         execSuccess: execResult.success,
         execError: execResult.error,
+        execOutputPreview: execResult.output.slice(0, 2000),
+        execOutputLength: execResult.output.length,
+        execEventsCount: execResult.events.length,
+      }, 'Execution result');
+      logger.debug({
+        bot: this.botName,
         execOutput: execResult.output,
         execEvents: execResult.events,
-      }, 'Execution result');
+      }, 'Execution result details');
       this.statsTracker.trackExecution(this.botName, execResult.events);
       eventLog = execResult.events.map((event) => `${event.type}: ${event.message}`).join(' | ');
 
@@ -595,6 +673,7 @@ export class VoyagerLoop {
         this.curriculumAgent.updateProgress(task, true);
         this.curriculumAgent.getBlockerMemory().clearTask(task);
         this.lastCompletedTask = task.description;
+        this.blackboardManager?.postMessage(this.botName, 'completion', `Finished ${task.description}.`);
         return true;
       }
 
@@ -614,9 +693,13 @@ export class VoyagerLoop {
           source: 'action-agent',
           functionName: generated.functionName,
           codeLength: generated.functionCode.length,
-          code: generated.functionCode,
           execCode: generated.execCode,
         }, 'Code generated by ActionAgent');
+        logger.debug({
+          bot: this.botName,
+          functionName: generated.functionName,
+          code: generated.functionCode,
+        }, 'Retry generated code body');
       }
     }
 
@@ -628,6 +711,7 @@ export class VoyagerLoop {
       events: [],
     }, lastError || 'task failed');
     this.lastFailedTask = task.description;
+    this.blackboardManager?.postMessage(this.botName, 'blocker', `${task.description} failed: ${lastError || 'unknown error'}`);
     logger.warn({ bot: this.botName, task: task.description, lastError }, 'Task failed after max retries');
     return false;
   }

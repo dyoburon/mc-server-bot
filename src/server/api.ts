@@ -319,6 +319,11 @@ export function createAPIServer(botManager: BotManager): APIServerResult {
     });
   });
 
+  // Shared blackboard state
+  app.get('/api/blackboard', (_req: Request, res: Response) => {
+    res.json({ blackboard: botManager.getBlackboardManager().getState() });
+  });
+
   // Activity log
   app.get('/api/activity', (req: Request, res: Response) => {
     const limit = parseInt(String(req.query.limit ?? '50')) || 50;
@@ -375,6 +380,25 @@ export function createAPIServer(botManager: BotManager): APIServerResult {
     io.emit('bot:task', { bot: name, task: description, status: 'queued' });
     io.emit('activity', event);
 
+    res.json({ success: true });
+  });
+
+  // Set a swarm directive from dashboard/UI
+  app.post('/api/swarm', async (req: Request, res: Response) => {
+    const { description, requestedBy } = req.body;
+    if (!description) {
+      res.status(400).json({ error: 'description is required' });
+      return;
+    }
+    await botManager.handleSwarmDirective(description, requestedBy || 'dashboard');
+
+    const event = eventLog.push({
+      type: 'swarm:directive',
+      botName: 'swarm',
+      description: `Swarm directive set: ${description}`,
+      metadata: { requestedBy: requestedBy || 'dashboard' },
+    });
+    io.emit('activity', event);
     res.json({ success: true });
   });
 

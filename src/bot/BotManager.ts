@@ -7,6 +7,7 @@ import { logger } from '../util/logger';
 import { LLMClient } from '../ai/LLMClient';
 import { AffinityManager } from '../personality/AffinityManager';
 import { ConversationManager } from '../personality/ConversationManager';
+import { BlackboardManager } from '../voyager/BlackboardManager';
 
 interface SavedBot {
   name: string;
@@ -22,6 +23,7 @@ export class BotManager {
   private llmClient: LLMClient | null;
   private affinityManager: AffinityManager;
   private conversationManager: ConversationManager;
+  private blackboardManager: BlackboardManager;
 
   constructor(config: Config, llmClient: LLMClient | null) {
     this.config = config;
@@ -29,6 +31,7 @@ export class BotManager {
     this.llmClient = llmClient;
     this.affinityManager = new AffinityManager(config.affinity, path.join(process.cwd(), 'data'));
     this.conversationManager = new ConversationManager();
+    this.blackboardManager = new BlackboardManager(path.join(process.cwd(), 'data'));
   }
 
   async spawnBot(
@@ -61,6 +64,8 @@ export class BotManager {
       llmClient: this.llmClient,
       affinityManager: this.affinityManager,
       conversationManager: this.conversationManager,
+      blackboardManager: this.blackboardManager,
+      onSwarmDirective: (description, requestedBy) => this.handleSwarmDirective(description, requestedBy),
     });
 
     this.bots.set(key, instance);
@@ -109,6 +114,22 @@ export class BotManager {
 
   getConversationManager(): ConversationManager {
     return this.conversationManager;
+  }
+
+  getBlackboardManager(): BlackboardManager {
+    return this.blackboardManager;
+  }
+
+  async handleSwarmDirective(description: string, requestedBy: string): Promise<void> {
+    const bots = this.getAllBots().filter((bot) => bot.getVoyagerLoop());
+    for (const bot of bots) {
+      bot.getVoyagerLoop()?.overrideWithSwarmDirective(description, requestedBy);
+    }
+
+    const leader = bots.find((bot) => !!bot.bot)?.getVoyagerLoop();
+    if (leader) {
+      await leader.queueSwarmGoal(description, requestedBy);
+    }
   }
 
   setMode(name: string, mode: string): boolean {

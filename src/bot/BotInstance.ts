@@ -16,6 +16,7 @@ import { VoyagerLoop } from '../voyager/VoyagerLoop';
 import { StatsTracker } from '../voyager/StatsTracker';
 import { renderObservation } from '../voyager/Observation';
 import { PERSONALITIES } from '../personality/PersonalityType';
+import { BlackboardManager } from '../voyager/BlackboardManager';
 
 export interface BotOptions {
   name: string;
@@ -26,10 +27,13 @@ export interface BotOptions {
   llmClient: LLMClient | null;
   affinityManager: AffinityManager;
   conversationManager: ConversationManager;
+  blackboardManager: BlackboardManager;
+  onSwarmDirective?: (description: string, requestedBy: string) => Promise<void> | void;
 }
 
 export class BotInstance {
   private static OWNER_PLAYER = 'Nerdfuryz';
+  private static nextAvailableConnectAt = 0;
   readonly name: string;
   readonly personality: string;
   mode: BotMode;
@@ -43,14 +47,18 @@ export class BotInstance {
   private ambientChatTimeout: NodeJS.Timeout | null = null;
   private reconnectAttempts = 0;
   private destroyed = false;
+  private pendingConnectTimeout: NodeJS.Timeout | null = null;
   private llmClient: LLMClient | null;
   private affinityManager: AffinityManager;
   private conversationManager: ConversationManager;
+  private blackboardManager: BlackboardManager;
+  private onSwarmDirective?: (description: string, requestedBy: string) => Promise<void> | void;
   private chatCooldowns: Map<string, number> = new Map();
   private voyagerLoop: VoyagerLoop | null = null;
   private instinctInterval: NodeJS.Timeout | null = null;
   private instinctResumeTimeout: NodeJS.Timeout | null = null;
   private instinctActive = false;
+  private instinctReason: 'attack' | 'hazard' | null = null;
   private voyagerPausedByInstinct = false;
   private lastAttackedAt = 0;
   private lastHealth = 20;
@@ -67,10 +75,28 @@ export class BotInstance {
     this.llmClient = options.llmClient;
     this.affinityManager = options.affinityManager;
     this.conversationManager = options.conversationManager;
+    this.blackboardManager = options.blackboardManager;
+    this.onSwarmDirective = options.onSwarmDirective;
   }
 
-  async connect(): Promise<void> {
+  async connect(skipQueue = false): Promise<void> {
     if (this.destroyed) return;
+
+    if (!skipQueue && this.pendingConnectTimeout) {
+      logger.debug({ bot: this.name }, 'Connect already scheduled, skipping duplicate request');
+      return;
+    }
+
+    const delay = skipQueue ? 0 : this.reserveConnectSlot();
+    if (!skipQueue && delay > 0) {
+      this.state = BotState.SPAWNING;
+      logger.info({ bot: this.name, delay }, 'Queued bot connection to stagger join');
+      this.pendingConnectTimeout = setTimeout(() => {
+        this.pendingConnectTimeout = null;
+        void this.connect(true);
+      }, delay);
+      return;
+    }
 
     this.state = BotState.SPAWNING;
     logger.info({ bot: this.name }, 'Connecting to Minecraft server...');
@@ -81,6 +107,7 @@ export class BotInstance {
       username: this.name,
       version: this.config.minecraft.version,
       auth: this.config.minecraft.auth as any,
+      hideErrors: true,
       physicsEnabled: false,
     });
 
@@ -117,20 +144,22 @@ export class BotInstance {
         });
       }
 
-      // Auth with DyoAuth before doing anything else
+      // Auth with DyoAuth, then select class, before doing anything else
       this.handleAuth(() => {
-        // Teleport to spawn location if specified
-        if (this.spawnLocation && this.bot) {
-          this.bot.chat(`/tp ${this.name} ${this.spawnLocation.x} ${this.spawnLocation.y} ${this.spawnLocation.z}`);
-        }
+        this.handleClassSelection(() => {
+          // Teleport to spawn location if specified
+          if (this.spawnLocation && this.bot) {
+            this.bot.chat(`/tp ${this.name} ${this.spawnLocation.x} ${this.spawnLocation.y} ${this.spawnLocation.z}`);
+          }
 
-        this.state = BotState.IDLE;
-        this.startHeadTracking();
-        if (this.mode !== BotMode.CODEGEN) {
-          this.startWandering(); // Voyager owns movement in codegen mode
-        }
-        this.startChatListener();
-        this.startVoyagerIfCodegen();
+          this.state = BotState.IDLE;
+          this.startHeadTracking();
+          if (this.mode !== BotMode.CODEGEN) {
+            this.startWandering(); // Voyager owns movement in codegen mode
+          }
+          this.startChatListener();
+          this.startVoyagerIfCodegen();
+        });
       });
     });
 
@@ -166,6 +195,9 @@ export class BotInstance {
       }, 'Bot health updated');
       if (this.bot && health < this.lastHealth) {
         this.statsTracker.trackDamage(this.name, this.lastHealth - health);
+        if (this.isDrowning()) {
+          this.triggerHazardInstinct('drowning-damage');
+        }
         this.triggerAttackInstinct(this.findLikelyThreat(), 'health-drop');
       }
       this.lastHealth = health;
@@ -189,7 +221,7 @@ export class BotInstance {
     });
 
     this.bot.on('path_update', (result: any) => {
-      logger.info({
+      logger.debug({
         bot: this.name,
         status: result?.status || 'unknown',
         nodes: Array.isArray(result?.path) ? result.path.length : 0,
@@ -253,12 +285,20 @@ export class BotInstance {
 
     bot.on('message', onMessage);
 
-    // Proactively try register after 1s (in case message event was missed)
+    // Proactively try login after 1s, then register after 3s (in case message events were missed)
     setTimeout(() => {
       if (!authDone && bot) {
-        bot.chat(`/register ${BotInstance.BOT_PASSWORD} ${BotInstance.BOT_PASSWORD}`);
+        logger.info({ bot: this.name }, 'Proactively trying /login');
+        bot.chat(`/login ${BotInstance.BOT_PASSWORD}`);
       }
     }, 1000);
+
+    setTimeout(() => {
+      if (!authDone && bot) {
+        logger.info({ bot: this.name }, 'Proactively trying /register');
+        bot.chat(`/register ${BotInstance.BOT_PASSWORD} ${BotInstance.BOT_PASSWORD}`);
+      }
+    }, 3000);
 
     // Timeout fallback
     setTimeout(() => {
@@ -269,8 +309,87 @@ export class BotInstance {
     }, 15000);
   }
 
+  // Maps personality to the class hotbar slot (DyoClasses puts icons in slots 2-5)
+  private static PERSONALITY_CLASS_MAP: Record<string, { slot: number; className: string }> = {
+    guard:      { slot: 2, className: 'Warrior' },
+    blacksmith: { slot: 2, className: 'Warrior' },
+    elder:      { slot: 3, className: 'Mage' },
+    merchant:   { slot: 3, className: 'Mage' },
+    explorer:   { slot: 4, className: 'Archer' },
+    farmer:     { slot: 5, className: 'Tank' },
+    builder:    { slot: 5, className: 'Tank' },
+  };
+
+  private handleClassSelection(onReady: () => void): void {
+    if (!this.bot) { onReady(); return; }
+
+    const bot = this.bot;
+    const mapping = BotInstance.PERSONALITY_CLASS_MAP[this.personality.toLowerCase()];
+    if (!mapping) {
+      logger.warn({ bot: this.name, personality: this.personality }, 'No class mapping for personality, skipping class selection');
+      onReady();
+      return;
+    }
+
+    let classDone = false;
+
+    const finish = () => {
+      if (classDone) return;
+      classDone = true;
+      bot.removeListener('message', onClassMessage);
+      onReady();
+    };
+
+    const onClassMessage = (jsonMsg: any) => {
+      if (classDone) return;
+      const msg = jsonMsg.toString();
+
+      if (msg.includes('You are now a')) {
+        logger.info({ bot: this.name, class: mapping.className }, 'Class selected successfully');
+        finish();
+      }
+    };
+
+    bot.on('message', onClassMessage);
+
+    // Wait 2 seconds for DyoClasses to give us the selection items (it delays 5 ticks after join)
+    setTimeout(() => {
+      if (classDone || !this.bot) return;
+
+      // Check if we have class selection items in hotbar (iron_sword in slot 2 = class selection active)
+      const checkItem = bot.inventory.slots[mapping.slot + 36]; // hotbar slots are 36-44
+      if (!checkItem) {
+        // No class selection items — we probably already have a class
+        logger.info({ bot: this.name }, 'No class selection items found, already has a class');
+        finish();
+        return;
+      }
+
+      logger.info({ bot: this.name, personality: this.personality, class: mapping.className, slot: mapping.slot, item: checkItem.name }, 'Selecting class');
+      bot.setQuickBarSlot(mapping.slot);
+
+      // Small delay then activate the item to trigger PlayerInteractEvent
+      setTimeout(() => {
+        if (classDone || !this.bot) return;
+        bot.activateItem();
+      }, 500);
+    }, 2000);
+
+    // Timeout fallback — don't block forever
+    setTimeout(() => {
+      if (!classDone) {
+        logger.warn({ bot: this.name }, 'Class selection timeout, proceeding anyway');
+        finish();
+      }
+    }, 10000);
+  }
+
   private scheduleReconnect(): void {
     if (this.destroyed) return;
+    if (this.pendingConnectTimeout) {
+      logger.debug({ bot: this.name }, 'Reconnect already queued, skipping duplicate schedule');
+      return;
+    }
     if (this.reconnectAttempts >= this.config.bots.maxReconnectAttempts) {
       logger.error({ bot: this.name }, 'Max reconnect attempts reached');
       return;
@@ -283,7 +402,18 @@ export class BotInstance {
     this.reconnectAttempts++;
 
     logger.info({ bot: this.name, delay, attempt: this.reconnectAttempts }, 'Scheduling reconnect');
-    setTimeout(() => this.connect(), delay);
+    this.pendingConnectTimeout = setTimeout(() => {
+      this.pendingConnectTimeout = null;
+      void this.connect();
+    }, delay);
+  }
+
+  private reserveConnectSlot(): number {
+    const now = Date.now();
+    const staggerMs = Math.max(0, this.config.bots.joinStaggerMs || 0);
+    const scheduledAt = Math.max(now, BotInstance.nextAvailableConnectAt);
+    BotInstance.nextAvailableConnectAt = scheduledAt + staggerMs;
+    return Math.max(0, scheduledAt - now);
   }
 
   startHeadTracking(): void {
@@ -365,6 +495,15 @@ export class BotInstance {
       const player = this.bot.players[username];
       if (!player?.entity) return;
       if (username.toLowerCase() !== BotInstance.OWNER_PLAYER.toLowerCase()) return;
+
+      const swarmMatch = message.match(/^swarm:\s*(.+)$/i);
+      if (swarmMatch && this.onSwarmDirective) {
+        const directive = swarmMatch[1].trim();
+        logger.info({ bot: this.name, player: username, directive }, 'Swarm directive received');
+        await this.onSwarmDirective(directive, username);
+        this.sendLongChat(`Understood. The swarm will work on: ${directive}`);
+        return;
+      }
 
       const dist = player.entity.position.distanceTo(this.bot.entity.position);
       if (dist > this.config.behavior.conversationRadius) return;
@@ -606,24 +745,22 @@ export class BotInstance {
       this.config,
       this.llmClient
     );
+    this.voyagerLoop.setBlackboardManager(this.blackboardManager);
     this.voyagerLoop.start();
   }
 
   private triggerAttackInstinct(source: any, trigger: string): void {
     if (!this.bot || !this.config.instincts.enabled || this.destroyed) return;
+    if (this.isDrowning()) {
+      this.triggerHazardInstinct('drowning-preempts-attack');
+      return;
+    }
+
     this.lastAttackedAt = Date.now();
     this.lastAttackerName = source?.username || source?.name || null;
 
     if (!this.instinctActive) {
-      this.instinctActive = true;
-      this.state = BotState.INSTINCT;
-      if (this.bot.pathfinder.isMoving()) {
-        this.bot.pathfinder.stop();
-      }
-      if (this.voyagerLoop?.isRunning() && !this.voyagerLoop.isPaused()) {
-        this.voyagerLoop.pause(`instinct:${trigger}`);
-        this.voyagerPausedByInstinct = true;
-      }
+      this.activateInstinct('attack', trigger);
       logger.warn({ bot: this.name, trigger, attacker: this.lastAttackerName, health: this.bot.health }, 'Attack instinct triggered');
       this.startInstinctLoop();
     }
@@ -634,11 +771,60 @@ export class BotInstance {
     this.instinctResumeTimeout = setTimeout(() => this.stopInstinct('attack-cooldown-expired'), this.config.instincts.attackCooldownMs);
   }
 
+  private triggerHazardInstinct(trigger: string): void {
+    if (!this.bot || !this.config.instincts.enabled || this.destroyed) return;
+
+    if (!this.instinctActive || this.instinctReason !== 'hazard') {
+      this.activateInstinct('hazard', trigger);
+      logger.warn({
+        bot: this.name,
+        trigger,
+        oxygen: (this.bot.entity as any).oxygenLevel ?? 300,
+        position: {
+          x: Number(this.bot.entity.position.x.toFixed(1)),
+          y: Number(this.bot.entity.position.y.toFixed(1)),
+          z: Number(this.bot.entity.position.z.toFixed(1)),
+        },
+      }, 'Hazard instinct triggered');
+      this.startInstinctLoop();
+    }
+  }
+
+  private activateInstinct(reason: 'attack' | 'hazard', trigger: string): void {
+    if (!this.bot) return;
+
+    this.instinctActive = true;
+    this.instinctReason = reason;
+    this.state = BotState.INSTINCT;
+    if (this.instinctResumeTimeout) {
+      clearTimeout(this.instinctResumeTimeout);
+      this.instinctResumeTimeout = null;
+    }
+    if (this.bot.pathfinder.isMoving()) {
+      this.bot.pathfinder.stop();
+    }
+    this.clearMovementControls();
+    if (this.voyagerLoop?.isRunning() && !this.voyagerLoop.isPaused()) {
+      this.voyagerLoop.pause(`instinct:${trigger}`);
+      this.voyagerPausedByInstinct = true;
+    }
+  }
+
   private startInstinctLoop(): void {
     if (this.instinctInterval || !this.bot) return;
     this.instinctInterval = setInterval(() => {
       if (!this.bot || !this.instinctActive) return;
       if (this.bot.health <= 0) return;
+
+      if (this.isDrowning()) {
+        this.runSurfaceInstinct();
+        return;
+      }
+
+      if (this.instinctReason === 'hazard') {
+        this.stopInstinct('hazard-cleared');
+        return;
+      }
 
       const threat = this.findLikelyThreat();
       if (!threat) {
@@ -666,7 +852,9 @@ export class BotInstance {
     if (!this.instinctActive) return;
 
     this.instinctActive = false;
+    this.instinctReason = null;
     this.lastAttackerName = null;
+    this.clearMovementControls();
     if (this.state === BotState.INSTINCT) {
       this.state = BotState.IDLE;
     }
@@ -728,6 +916,7 @@ export class BotInstance {
 
   private runFleeInstinct(threat: any): void {
     if (!this.bot || !threat?.position) return;
+    this.clearMovementControls();
     this.state = BotState.INSTINCT;
     const current = this.bot.entity.position;
     const away = current.minus(threat.position);
@@ -745,6 +934,61 @@ export class BotInstance {
       health: this.bot.health,
       target: { x: Number(target.x.toFixed(1)), y: Number(target.y.toFixed(1)), z: Number(target.z.toFixed(1)) },
     }, 'Instinct action');
+  }
+
+  private runSurfaceInstinct(): void {
+    if (!this.bot) return;
+
+    this.state = BotState.INSTINCT;
+    if (this.bot.pathfinder.isMoving()) {
+      this.bot.pathfinder.stop();
+    }
+
+    const oxygen = (this.bot.entity as any).oxygenLevel ?? 300;
+    const pos = this.bot.entity.position;
+    const currentBlock = this.bot.blockAt(pos);
+    const yaw = this.bot.entity.yaw;
+    void this.bot.look(yaw, -Math.PI / 2, true).catch(() => undefined);
+
+    this.bot.setControlState('jump', true);
+    this.bot.setControlState('forward', true);
+    this.bot.setControlState('sprint', oxygen < this.config.instincts.drowningOxygenThreshold / 2);
+
+    if (currentBlock?.name === 'water' || currentBlock?.name === 'bubble_column') {
+      this.bot.setControlState('back', false);
+      this.bot.setControlState('left', false);
+      this.bot.setControlState('right', false);
+    }
+
+    logger.warn({
+      bot: this.name,
+      instinct: 'surface',
+      oxygen,
+      position: { x: Number(pos.x.toFixed(1)), y: Number(pos.y.toFixed(1)), z: Number(pos.z.toFixed(1)) },
+    }, 'Instinct action');
+
+    if (oxygen >= this.config.instincts.drowningSurfaceClearOxygen && !this.isUnderwater()) {
+      this.stopInstinct('reached-air');
+    }
+  }
+
+  private isDrowning(): boolean {
+    if (!this.bot) return false;
+    const oxygen = (this.bot.entity as any).oxygenLevel ?? 300;
+    return oxygen <= this.config.instincts.drowningOxygenThreshold || (this.isUnderwater() && oxygen < 300);
+  }
+
+  private isUnderwater(): boolean {
+    if (!this.bot) return false;
+    const headHeight = (this.bot.entity as any).height || 1.62;
+    const eyePos = this.bot.entity.position.offset(0, Math.max(1, headHeight - 0.2), 0);
+    const headBlock = this.bot.blockAt(eyePos);
+    return headBlock?.name === 'water' || headBlock?.name === 'bubble_column';
+  }
+
+  private clearMovementControls(): void {
+    if (!this.bot) return;
+    this.bot.clearControlStates();
   }
 
   private stopAmbientBehaviors(): void {

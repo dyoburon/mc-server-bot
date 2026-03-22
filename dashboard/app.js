@@ -8,6 +8,7 @@ const state = {
   conversations: [],
   world: null,
   activity: [],
+  blackboard: null,
 };
 
 const els = {
@@ -25,8 +26,12 @@ const els = {
   inventoryPanel: document.getElementById('inventory-panel'),
   relationshipsPanel: document.getElementById('relationships-panel'),
   conversationsPanel: document.getElementById('conversations-panel'),
+  blackboardPanel: document.getElementById('blackboard-panel'),
+  blackboardMessages: document.getElementById('blackboard-messages'),
   taskForm: document.getElementById('task-form'),
   taskInput: document.getElementById('task-input'),
+  swarmForm: document.getElementById('swarm-form'),
+  swarmInput: document.getElementById('swarm-input'),
 };
 
 async function getJSON(url) {
@@ -51,6 +56,12 @@ async function refreshActivity() {
   const data = await getJSON('/api/activity?limit=18');
   state.activity = data.events || [];
   renderActivity();
+}
+
+async function refreshBlackboard() {
+  const data = await getJSON('/api/blackboard');
+  state.blackboard = data.blackboard || null;
+  renderBlackboard();
 }
 
 async function refreshSelectedBot() {
@@ -154,6 +165,34 @@ function renderSelectedBot() {
     : '<div class="list-item">No recent conversation history.</div>';
 }
 
+function renderBlackboard() {
+  const board = state.blackboard;
+  if (!board) {
+    els.blackboardPanel.innerHTML = '<div class="list-item">No blackboard state.</div>';
+    els.blackboardMessages.innerHTML = '<div class="list-item">No coordination messages.</div>';
+    return;
+  }
+
+  const swarmGoal = board.swarmGoal
+    ? `${row(['Swarm Goal', board.swarmGoal.rawRequest])}${row(['Status', board.swarmGoal.status])}`
+    : '<div class="list-item">No active swarm goal.</div>';
+
+  const claimed = (board.tasks || []).filter((task) => task.status === 'claimed');
+  const blocked = (board.tasks || []).filter((task) => task.status === 'blocked');
+  const reservations = board.reservations || [];
+
+  els.blackboardPanel.innerHTML = `
+    ${swarmGoal}
+    <div class="list-item"><strong>Claimed Tasks</strong>${claimed.length ? `<div class="chips">${claimed.map((task) => tag(`${task.assignedBot || 'unassigned'} -> ${task.description}`)).join('')}</div>` : '<p class="muted">None</p>'}</div>
+    <div class="list-item"><strong>Blocked Tasks</strong>${blocked.length ? `<div class="chips">${blocked.map((task) => tag(`${task.description}: ${task.blocker || 'blocked'}`)).join('')}</div>` : '<p class="muted">None</p>'}</div>
+    <div class="list-item"><strong>Reservations</strong>${reservations.length ? `<div class="chips">${reservations.slice(0, 20).map((res) => tag(`${res.botName}: ${res.type} ${res.key}`)).join('')}</div>` : '<p class="muted">None</p>'}</div>
+  `;
+
+  els.blackboardMessages.innerHTML = (board.messages || []).length
+    ? board.messages.slice(-16).reverse().map((msg) => `<div class="list-item"><strong>${msg.botName}</strong><p class="muted">${msg.kind}</p><p>${escapeHTML(msg.text)}</p></div>`).join('')
+    : '<div class="list-item">No coordination messages.</div>';
+}
+
 function row([label, value]) {
   return `<div class="kv"><span>${label}</span><span class="value-strong">${escapeHTML(String(value))}</span></div>`;
 }
@@ -175,13 +214,13 @@ function escapeHTML(text) {
 }
 
 async function boot() {
-  await Promise.all([refreshBots(), refreshWorld(), refreshActivity()]);
+  await Promise.all([refreshBots(), refreshWorld(), refreshActivity(), refreshBlackboard()]);
   await refreshSelectedBot();
 
   const socket = io();
   ['bot:spawn', 'bot:disconnect', 'bot:position', 'bot:health', 'bot:state', 'bot:inventory', 'activity', 'world:time'].forEach((eventName) => {
     socket.on(eventName, async () => {
-      await Promise.all([refreshBots(), refreshWorld(), refreshActivity()]);
+      await Promise.all([refreshBots(), refreshWorld(), refreshActivity(), refreshBlackboard()]);
       await refreshSelectedBot();
     });
   });
@@ -197,6 +236,20 @@ async function boot() {
     els.taskInput.value = '';
     await refreshSelectedBot();
     await refreshActivity();
+    await refreshBlackboard();
+  });
+
+  els.swarmForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const description = els.swarmInput.value.trim();
+    if (!description || !state.selectedBot) return;
+    await fetch(`/api/swarm`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description, requestedBy: 'dashboard' }),
+    });
+    els.swarmInput.value = '';
+    await Promise.all([refreshBots(), refreshSelectedBot(), refreshActivity(), refreshBlackboard()]);
   });
 }
 

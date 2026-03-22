@@ -383,6 +383,9 @@ export class CodeExecutor {
 `;
     }
 
+    let timeoutHandle: NodeJS.Timeout | null = null;
+    const cleanup = { interrupt: null as (Function | null) };
+
     try {
       const context = vm.createContext(sandbox);
       const script = new vm.Script(wrappedCode, { filename: 'skill.js' });
@@ -390,12 +393,12 @@ export class CodeExecutor {
 
       await Promise.race([
         resultPromise,
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Execution timed out')), this.timeoutMs)
-        ),
         new Promise((_, reject) => {
-          const cleanup = onInterrupt((reason) => {
-            cleanup();
+          timeoutHandle = setTimeout(() => reject(new Error('Execution timed out')), this.timeoutMs);
+        }),
+        new Promise((_, reject) => {
+          cleanup.interrupt = onInterrupt((reason) => {
+            if (cleanup.interrupt) cleanup.interrupt();
             reject(new Error(`Execution interrupted: ${reason}`));
           });
         }),
@@ -416,9 +419,15 @@ export class CodeExecutor {
         events,
       };
     } finally {
+      // Clean up timeout and interrupt listener to prevent retained references
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+      if (cleanup.interrupt) cleanup.interrupt();
+      interruptState.listeners.clear();
       if (this.currentInterrupt === interruptState) {
         this.currentInterrupt = null;
       }
+      // Clear logs array to release strings
+      logs.length = 0;
     }
   }
 

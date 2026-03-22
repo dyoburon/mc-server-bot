@@ -45,6 +45,10 @@
               <input id="task-input" type="text" placeholder="Queue a task or directive" />
               <button type="submit">Send Task</button>
             </form>
+            <form id="swarm-form" class="inline-form swarm-form">
+              <input id="swarm-input" type="text" placeholder="Set swarm: directive" />
+              <button type="submit">Send Swarm</button>
+            </form>
           </div>
         </section>
 
@@ -82,6 +86,17 @@
           <article class="panel section wide">
             <div class="section-header"><span>Conversations</span></div>
             <div id="conversations-panel" class="section-body conversations"></div>
+          </article>
+        </section>
+
+        <section class="grid lower-grid">
+          <article class="panel section wide">
+            <div class="section-header"><span>Swarm Blackboard</span></div>
+            <div id="blackboard-panel" class="section-body"></div>
+          </article>
+          <article class="panel section">
+            <div class="section-header"><span>Coordination Feed</span></div>
+            <div id="blackboard-messages" class="section-body list"></div>
           </article>
         </section>
       </main>
