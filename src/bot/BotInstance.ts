@@ -255,7 +255,7 @@ export class BotInstance {
 
     // Proactively try register after 1s (in case message event was missed)
     setTimeout(() => {
-      if (!authDone && bot) {
+      if (!authDone && bot && bot.entity) {
         bot.chat(`/register ${BotInstance.BOT_PASSWORD} ${BotInstance.BOT_PASSWORD}`);
       }
     }, 1000);
@@ -290,7 +290,7 @@ export class BotInstance {
     if (this.headTrackingInterval) return;
 
     this.headTrackingInterval = setInterval(() => {
-      if (!this.bot || this.state === BotState.DISCONNECTED) return;
+      if (!this.bot || this.state === BotState.DISCONNECTED || !this.bot.players || !this.bot.entity) return;
 
       const players = Object.values(this.bot.players).filter(
         (p) => p.entity && p.username !== this.bot!.username
@@ -534,6 +534,10 @@ export class BotInstance {
       }
 
       // Find nearest player within conversation radius
+      if (!this.bot.players || !this.bot.entity) {
+        this.scheduleAmbientChat();
+        return;
+      }
       const players = Object.values(this.bot.players).filter(
         (p) => p.entity && p.username !== this.bot!.username
       );
