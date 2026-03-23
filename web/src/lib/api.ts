@@ -319,6 +319,7 @@ export const api = {
   getBotRelationships: (name: string) => fetchJSON<{ relationships: Record<string, number> }>(`/api/bots/${name}/relationships`),
   getBotConversations: (name: string) => fetchJSON<{ conversations: Record<string, ChatMessage[]> }>(`/api/bots/${name}/conversations`),
   getBotTasks: (name: string) => fetchJSON<{ currentTask: string | null; completedTasks: string[]; failedTasks: string[] }>(`/api/bots/${name}/tasks`),
+  getBotMissionQueue: (name: string) => fetchJSON<{ missions: { id: string; title: string; type: string; priority: number; status: string; createdAt: number }[] }>(`/api/bots/${name}/missions`),
 
   // Create / delete
   createBot: (name: string, personality: string, mode?: string) =>
