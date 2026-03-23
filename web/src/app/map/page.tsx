@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useBotStore } from '@/lib/store';
+import { useControlStore } from '@/lib/controlStore';
 import { api } from '@/lib/api';
 import { getPersonalityColor, PLAYER_COLOR, STATE_COLORS } from '@/lib/constants';
 import { getBlockColor } from '@/lib/blockColors';
@@ -23,9 +24,19 @@ interface MapEntity {
   personality?: string;
 }
 
+interface ContextMenuState {
+  x: number;
+  y: number;
+  worldX: number;
+  worldZ: number;
+}
+
 export default function MapPage() {
   const bots = useBotStore((s) => s.botList);
   const players = useBotStore((s) => s.playerList);
+  const selectedBotIds = useControlStore((s) => s.selectedBotIds);
+  const toggleBotSelection = useControlStore((s) => s.toggleBotSelection);
+  const setCommandState = useControlStore((s) => s.setCommandState);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -36,6 +47,7 @@ export default function MapPage() {
   const dragStartRef = useRef({ x: 0, y: 0 });
   const hoveredRef = useRef<string | null>(null);
   const selectedRef = useRef<string | null>(null);
+  const selectedBotIdsRef = useRef<Set<string>>(selectedBotIds);
   const showRef = useRef({ bots: true, players: true, trails: true, grid: true, coords: true, terrain: true });
   const botsRef = useRef(bots);
   const playersRef = useRef(players);
@@ -50,10 +62,12 @@ export default function MapPage() {
   const kick = () => forceRender((n) => n + 1);
 
   const [terrainStatus, setTerrainStatus] = useState<'idle' | 'loading' | 'loaded' | 'error'>('idle');
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
 
   // Keep refs in sync with zustand
   botsRef.current = bots;
   playersRef.current = players;
+  selectedBotIdsRef.current = selectedBotIds;
 
   // Load terrain
   const loadTerrain = useCallback(async (centerX: number, centerZ: number) => {
@@ -151,6 +165,7 @@ export default function MapPage() {
       const players = playersRef.current;
       const hovered = hoveredRef.current;
       const selected = selectedRef.current;
+      const fleetSelected = selectedBotIdsRef.current;
 
       const cx = w / 2;
       const cy = h / 2;
@@ -259,10 +274,29 @@ export default function MapPage() {
 
         const isHovered = hovered === entity.name;
         const isSelected = selected === entity.name;
+        const isFleetSelected = entity.type === 'bot' && fleetSelected.has(entity.name);
         const baseR = entity.type === 'bot' ? 8 : 6;
-        const r = isHovered || isSelected ? baseR + 2 : baseR;
+        const r = isHovered || isSelected || isFleetSelected ? baseR + 2 : baseR;
 
         entityPositions.current.set(entity.name, { sx, sy, radius: r + 4 });
+
+        // Fleet selection ring (outer dashed ring)
+        if (isFleetSelected) {
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(sx, sy, r + 10, 0, Math.PI * 2);
+          ctx.setLineDash([4, 3]);
+          ctx.strokeStyle = '#10B981';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.restore();
+          // Selection glow
+          ctx.beginPath();
+          ctx.arc(sx, sy, r + 8, 0, Math.PI * 2);
+          ctx.fillStyle = '#10B98118';
+          ctx.fill();
+        }
 
         if (isSelected || isHovered) {
           ctx.beginPath(); ctx.arc(sx, sy, r + 6, 0, Math.PI * 2); ctx.fillStyle = entity.color + '20'; ctx.fill();
@@ -285,7 +319,7 @@ export default function MapPage() {
 
         ctx.save();
         ctx.shadowColor = '#000000'; ctx.shadowBlur = 3;
-        ctx.fillStyle = '#ffffff'; ctx.font = `${isHovered || isSelected ? 'bold ' : ''}11px system-ui, sans-serif`;
+        ctx.fillStyle = '#ffffff'; ctx.font = `${isHovered || isSelected || isFleetSelected ? 'bold ' : ''}11px system-ui, sans-serif`;
         ctx.textAlign = 'center'; ctx.fillText(entity.name, sx, sy - r - 6);
         ctx.restore();
 
@@ -308,6 +342,14 @@ export default function MapPage() {
       ctx.fillStyle = '#ffffff60'; ctx.font = '10px monospace'; ctx.textAlign = 'right';
       ctx.fillText(`${scale.toFixed(1)}x`, w - 12, h - 14);
 
+      // Fleet selection count HUD
+      if (fleetSelected.size > 0) {
+        const label = `${fleetSelected.size} selected`;
+        ctx.fillStyle = '#10B98140'; ctx.fillRect(8, 8, ctx.measureText(label).width + 20, 22);
+        ctx.fillStyle = '#10B981'; ctx.font = 'bold 10px system-ui'; ctx.textAlign = 'left';
+        ctx.fillText(label, 18, 23);
+      }
+
       animFrame = requestAnimationFrame(draw);
     };
 
@@ -317,17 +359,28 @@ export default function MapPage() {
 
   // Input handlers — all mutate refs directly, no state updates during drag/hover
   const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0) return; // Only left click
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
 
+    // Close context menu on any click
+    if (contextMenu) {
+      setContextMenu(null);
+    }
+
     for (const [name, pos] of entityPositions.current) {
       const dx = mx - pos.sx;
       const dy = my - pos.sy;
       if (dx * dx + dy * dy < pos.radius * pos.radius) {
         selectedRef.current = selectedRef.current === name ? null : name;
+        // Also toggle in fleet selection for bots
+        const bot = botsRef.current.find((b) => b.name === name);
+        if (bot) {
+          toggleBotSelection(name);
+        }
         kick();
         return;
       }
@@ -369,6 +422,114 @@ export default function MapPage() {
       }
       kick();
     }
+  };
+
+  // Context menu on right-click
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+
+    // Convert screen coords to world coords
+    const w = rect.width;
+    const h = rect.height;
+    const cxScreen = w / 2;
+    const cyScreen = h / 2;
+    const worldX = (mx - cxScreen - offsetRef.current.x) / scaleRef.current;
+    const worldZ = (my - cyScreen - offsetRef.current.y) / scaleRef.current;
+
+    setContextMenu({
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+      worldX: Math.round(worldX),
+      worldZ: Math.round(worldZ),
+    });
+  };
+
+  const dispatchBatchCommand = useCallback(
+    async (command: string, botNames: string[]) => {
+      for (const name of botNames) {
+        setCommandState(name, {
+          botName: name,
+          command,
+          status: 'running',
+          startedAt: Date.now(),
+        });
+        try {
+          await api.queueTask(name, command);
+          setCommandState(name, {
+            botName: name,
+            command,
+            status: 'succeeded',
+            startedAt: Date.now(),
+            finishedAt: Date.now(),
+          });
+        } catch (err) {
+          setCommandState(name, {
+            botName: name,
+            command,
+            status: 'failed',
+            startedAt: Date.now(),
+            finishedAt: Date.now(),
+            error: err instanceof Error ? err.message : 'Unknown error',
+          });
+        }
+      }
+    },
+    [setCommandState],
+  );
+
+  const handleMoveAllHere = () => {
+    if (!contextMenu) return;
+    const names = Array.from(selectedBotIds);
+    const { worldX, worldZ } = contextMenu;
+    // Send walkTo for each bot
+    for (const name of names) {
+      setCommandState(name, {
+        botName: name,
+        command: `Walk to ${worldX}, ${worldZ}`,
+        status: 'running',
+        startedAt: Date.now(),
+      });
+      api.walkTo(name, worldX, null, worldZ).then(() => {
+        setCommandState(name, {
+          botName: name,
+          command: `Walk to ${worldX}, ${worldZ}`,
+          status: 'succeeded',
+          startedAt: Date.now(),
+          finishedAt: Date.now(),
+        });
+      }).catch((err) => {
+        setCommandState(name, {
+          botName: name,
+          command: `Walk to ${worldX}, ${worldZ}`,
+          status: 'failed',
+          startedAt: Date.now(),
+          finishedAt: Date.now(),
+          error: err instanceof Error ? err.message : 'Unknown error',
+        });
+      });
+    }
+    setContextMenu(null);
+  };
+
+  const handleGuardArea = () => {
+    if (!contextMenu) return;
+    const names = Array.from(selectedBotIds);
+    const { worldX, worldZ } = contextMenu;
+    dispatchBatchCommand(`Guard the area around coordinates ${worldX}, ${worldZ} and attack any hostile mobs`, names);
+    setContextMenu(null);
+  };
+
+  const handlePatrolRoute = () => {
+    if (!contextMenu) return;
+    const names = Array.from(selectedBotIds);
+    const { worldX, worldZ } = contextMenu;
+    dispatchBatchCommand(`Patrol in a route around coordinates ${worldX}, ${worldZ} in a 30 block radius`, names);
+    setContextMenu(null);
   };
 
   // Zoom toward cursor with normalized sensitivity
@@ -437,6 +598,9 @@ export default function MapPage() {
   const show = showRef.current;
   const toggleShow = (key: keyof typeof show) => { showRef.current = { ...show, [key]: !show[key] }; kick(); };
 
+  const selectedCount = selectedBotIds.size;
+  const hasSquadSelection = selectedCount > 1;
+
   return (
     <div className="h-screen flex flex-col">
       {/* Toolbar */}
@@ -459,6 +623,11 @@ export default function MapPage() {
             </span>
           )}
           {terrainStatus === 'error' && <span className="text-[10px] text-red-400/70">Terrain unavailable</span>}
+          {selectedCount > 0 && (
+            <span className="text-[10px] text-emerald-400 font-medium">
+              {selectedCount} bot{selectedCount !== 1 ? 's' : ''} selected (right-click for commands)
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -496,24 +665,45 @@ export default function MapPage() {
               Entities ({allEntities.length})
             </p>
             <div className="space-y-0.5">
-              {allEntities.map((entity) => (
-                <button
-                  key={`${entity.type}-${entity.name}`}
-                  onClick={() => { centerOn(entity.x, entity.z); selectedRef.current = entity.name; kick(); }}
-                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left transition-colors ${
-                    selectedRef.current === entity.name ? 'bg-zinc-800' : 'hover:bg-zinc-800/50'
-                  }`}
-                >
-                  <span className={`w-2.5 h-2.5 shrink-0 ${entity.type === 'player' ? 'rounded-sm' : 'rounded-full'}`} style={{ backgroundColor: entity.color }} />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[11px] font-medium text-zinc-300 truncate">{entity.name}</p>
-                    <p className="text-[9px] text-zinc-600 font-mono tabular-nums">{Math.round(entity.x)}, {Math.round(entity.z)}</p>
-                  </div>
-                  <span className="text-[9px] text-zinc-600 uppercase shrink-0">
-                    {entity.type === 'bot' ? entity.personality?.slice(0, 3) : 'PLR'}
-                  </span>
-                </button>
-              ))}
+              {allEntities.map((entity) => {
+                const isFleetSelected = entity.type === 'bot' && selectedBotIds.has(entity.name);
+                return (
+                  <button
+                    key={`${entity.type}-${entity.name}`}
+                    onClick={() => {
+                      centerOn(entity.x, entity.z);
+                      selectedRef.current = entity.name;
+                      if (entity.type === 'bot') {
+                        toggleBotSelection(entity.name);
+                      }
+                      kick();
+                    }}
+                    className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left transition-colors ${
+                      selectedRef.current === entity.name ? 'bg-zinc-800' :
+                      isFleetSelected ? 'bg-emerald-500/10' :
+                      'hover:bg-zinc-800/50'
+                    }`}
+                  >
+                    {entity.type === 'bot' && (
+                      <span
+                        className="w-2 h-2 rounded-full shrink-0 border transition-colors"
+                        style={{
+                          borderColor: isFleetSelected ? '#10B981' : 'transparent',
+                          backgroundColor: isFleetSelected ? '#10B981' : 'transparent',
+                        }}
+                      />
+                    )}
+                    <span className={`w-2.5 h-2.5 shrink-0 ${entity.type === 'player' ? 'rounded-sm' : 'rounded-full'}`} style={{ backgroundColor: entity.color }} />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[11px] font-medium text-zinc-300 truncate">{entity.name}</p>
+                      <p className="text-[9px] text-zinc-600 font-mono tabular-nums">{Math.round(entity.x)}, {Math.round(entity.z)}</p>
+                    </div>
+                    <span className="text-[9px] text-zinc-600 uppercase shrink-0">
+                      {entity.type === 'bot' ? entity.personality?.slice(0, 3) : 'PLR'}
+                    </span>
+                  </button>
+                );
+              })}
               {allEntities.length === 0 && <p className="text-[11px] text-zinc-600 text-center py-4">No entities with positions</p>}
             </div>
           </div>
@@ -530,13 +720,93 @@ export default function MapPage() {
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onMouseLeave={() => { handleMouseUp(); hoveredRef.current = null; }}
+            onContextMenu={handleContextMenu}
             className="w-full h-full"
           />
+
+          {/* Context menu */}
+          {contextMenu && (
+            <div
+              className="absolute z-50 bg-zinc-900 border border-zinc-700/60 rounded-lg shadow-xl py-1 min-w-[180px]"
+              style={{ left: contextMenu.x, top: contextMenu.y }}
+            >
+              <div className="px-3 py-1.5 border-b border-zinc-800/60">
+                <p className="text-[10px] text-zinc-500 font-mono">
+                  {contextMenu.worldX}, {contextMenu.worldZ}
+                </p>
+              </div>
+              {hasSquadSelection ? (
+                <>
+                  <button
+                    onClick={handleMoveAllHere}
+                    className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors flex items-center gap-2"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M5 12h14M12 5l7 7-7 7" />
+                    </svg>
+                    Move All Here ({selectedCount} bots)
+                  </button>
+                  <button
+                    onClick={handleGuardArea}
+                    className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors flex items-center gap-2"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                    </svg>
+                    Guard This Area
+                  </button>
+                  <button
+                    onClick={handlePatrolRoute}
+                    className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors flex items-center gap-2"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <circle cx="12" cy="12" r="10" />
+                      <path d="M12 6v6l4 2" />
+                    </svg>
+                    Patrol Route
+                  </button>
+                </>
+              ) : selectedCount === 1 ? (
+                <>
+                  <button
+                    onClick={handleMoveAllHere}
+                    className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors flex items-center gap-2"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M5 12h14M12 5l7 7-7 7" />
+                    </svg>
+                    Move Here
+                  </button>
+                  <button
+                    onClick={handleGuardArea}
+                    className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors flex items-center gap-2"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                    </svg>
+                    Guard This Area
+                  </button>
+                </>
+              ) : (
+                <p className="px-3 py-2 text-[10px] text-zinc-500">Select bots first to issue commands</p>
+              )}
+              <div className="border-t border-zinc-800/60">
+                <button
+                  onClick={() => setContextMenu(null)}
+                  className="w-full text-left px-3 py-1.5 text-[10px] text-zinc-500 hover:text-zinc-300 transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="absolute bottom-4 left-4 bg-zinc-900/90 backdrop-blur-sm border border-zinc-800/60 rounded-lg p-3 text-[10px]">
             <p className="text-zinc-500 font-semibold uppercase tracking-wider mb-2">Legend</p>
             <div className="space-y-1.5">
               <LegendItem shape="circle" color="#6B7280" label="Bot" />
               <LegendItem shape="square" color="#60A5FA" label="Player" />
+              <LegendItem shape="circle" color="#10B981" label="Selected (fleet)" />
               {show.terrain && terrainCanvas.current && (
                 <>
                   <LegendItem shape="square" color="#5B8C33" label="Grass" />
