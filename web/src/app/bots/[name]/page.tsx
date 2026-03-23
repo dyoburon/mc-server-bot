@@ -12,6 +12,8 @@ import { BotActivityPanel } from '@/components/BotActivityPanel';
 import { StatsPanel } from '@/components/StatsPanel';
 import { WorldContext } from '@/components/WorldContext';
 import { BotCommandCenter } from '@/components/BotCommandCenter';
+import { MissionQueuePanel } from '@/components/MissionQueuePanel';
+import { CommandHistoryPanel } from '@/components/CommandHistoryPanel';
 
 export default function BotProfilePage() {
   const params = useParams();
@@ -249,6 +251,48 @@ export default function BotProfilePage() {
             )}
           </Section>
 
+          {/* Mission Queue */}
+          <MissionQueuePanel botName={bot.name} />
+
+          {/* Command History */}
+          <CommandHistoryPanel botName={bot.name} />
+
+          {/* Diagnostics */}
+          {bot.voyager && (
+            <Section title="Diagnostics">
+              <div className="space-y-2">
+                <DiagRow
+                  label="Internal State"
+                  value={bot.voyager.internalState || 'idle'}
+                  color={bot.voyager.internalState === 'error' ? '#EF4444' : bot.voyager.internalState === 'executing' ? '#3B82F6' : '#6B7280'}
+                />
+                <DiagRow
+                  label="Running"
+                  value={bot.voyager.isRunning ? 'Yes' : 'No'}
+                  color={bot.voyager.isRunning ? '#10B981' : '#6B7280'}
+                />
+                <DiagRow
+                  label="Paused"
+                  value={bot.voyager.isPaused ? 'Yes' : 'No'}
+                  color={bot.voyager.isPaused ? '#F59E0B' : '#6B7280'}
+                />
+                <DiagRow
+                  label="Queued Tasks"
+                  value={String(bot.voyager.queuedTaskCount ?? 0)}
+                  color="#8B5CF6"
+                />
+                {bot.voyager.failedTasks.length > 0 && (
+                  <DiagRow
+                    label="Last Failure"
+                    value={bot.voyager.failedTasks[bot.voyager.failedTasks.length - 1]}
+                    color="#EF4444"
+                    truncate
+                  />
+                )}
+              </div>
+            </Section>
+          )}
+
           {/* Inventory */}
           <Section title={`Inventory (${bot.inventory.length})`}>
             {/* Hotbar */}
@@ -410,6 +454,21 @@ function VitalBar({ label, value, max, color, icon }: { label: string; value: nu
         <motion.div className="h-full rounded-full" style={{ backgroundColor: color }} initial={{ width: 0 }} animate={{ width: `${pct}%` }} transition={{ duration: 0.6 }} />
       </div>
       <span className="text-[11px] text-zinc-400 w-10 text-right tabular-nums font-medium">{value}/{max}</span>
+    </div>
+  );
+}
+
+function DiagRow({ label, value, color, truncate: truncateText }: { label: string; value: string; color: string; truncate?: boolean }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-[10px] text-zinc-600 uppercase tracking-wider shrink-0">{label}</span>
+      <span
+        className={`text-[11px] font-medium text-right ${truncateText ? 'truncate max-w-[200px]' : ''}`}
+        style={{ color }}
+        title={truncateText ? value : undefined}
+      >
+        {value}
+      </span>
     </div>
   );
 }
