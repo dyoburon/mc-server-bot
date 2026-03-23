@@ -57,7 +57,7 @@ export function CommanderPanel({ plan, onExecute, onCancel, executing }: Props) 
         <h3 className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider mb-1">
           Intent
         </h3>
-        <p className="text-sm text-zinc-200">{plan.intent}</p>
+        <p className="text-sm text-zinc-200">{plan.parsedIntent}</p>
       </div>
 
       {/* Confidence */}
@@ -167,9 +167,9 @@ export function CommanderPanel({ plan, onExecute, onCancel, executing }: Props) 
                   </span>
                   <span className="text-sm text-zinc-200">{m.title}</span>
                 </div>
-                {m.assignees.length > 0 && (
+                {m.assigneeIds.length > 0 && (
                   <p className="text-xs text-zinc-500">
-                    Assignees: {m.assignees.join(', ')}
+                    Assignees: {m.assigneeIds.join(', ')}
                   </p>
                 )}
               </motion.div>

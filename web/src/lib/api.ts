@@ -318,6 +318,23 @@ export interface CommanderPlan {
   missions: MissionRecord[];
 }
 
+export interface CommanderCommandResult {
+  success: boolean;
+  command: { type: string; targets: string[] };
+  error?: string;
+}
+
+export interface CommanderMissionResult {
+  title: string;
+  assigneeIds: string[];
+}
+
+export interface CommanderResult {
+  success: boolean;
+  commandResults: CommanderCommandResult[];
+  missionsCreated: CommanderMissionResult[];
+}
+
 // API functions
 export const api = {
   // Bots
@@ -434,7 +451,7 @@ export const api = {
   cancelCommand: (id: string) => fetchJSON<{ success: boolean }>(`/api/commands/${id}/cancel`, { method: 'POST' }),
 
   // Missions
-  createMission: (data: { type: string; title: string; assigneeType: 'bot' | 'squad'; assigneeIds: string[]; priority?: string; steps?: any[]; source?: string }) =>
+  createMission: (data: { type: string; title: string; description?: string; assigneeType: 'bot' | 'squad'; assigneeIds: string[]; priority?: string; steps?: any[]; source?: string }) =>
     fetchJSON<{ mission: MissionRecord }>('/api/missions', { method: 'POST', body: JSON.stringify(data) }),
   getMissions: (params?: { bot?: string; squad?: string; status?: string; limit?: number }) => {
     const query = new URLSearchParams();
@@ -504,5 +521,5 @@ export const api = {
   parseCommanderInput: (input: string) =>
     fetchJSON<{ plan: CommanderPlan }>('/api/commander/parse', { method: 'POST', body: JSON.stringify({ input }) }),
   executeCommanderPlan: (planId: string) =>
-    fetchJSON<{ success: boolean }>('/api/commander/execute', { method: 'POST', body: JSON.stringify({ planId }) }),
+    fetchJSON<{ success: boolean; result: CommanderResult }>('/api/commander/execute', { method: 'POST', body: JSON.stringify({ planId }) }),
 };

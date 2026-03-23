@@ -1,6 +1,7 @@
 'use client';
 
 import { create } from 'zustand';
+import type { CommandRecord } from './api';
 
 export interface Squad {
   id: string;
@@ -42,6 +43,10 @@ interface ControlStore {
   setCommandState: (botName: string, state: BotCommandState) => void;
   clearCommandState: (botName: string) => void;
   clearAllCommandStates: () => void;
+
+  // Commands (from API)
+  commands: CommandRecord[];
+  setCommands: (commands: CommandRecord[]) => void;
 }
 
 let squadCounter = 0;
@@ -116,4 +121,8 @@ export const useControlStore = create<ControlStore>((set, get) => ({
     }),
 
   clearAllCommandStates: () => set({ commandStates: {} }),
+
+  // Commands (from API)
+  commands: [],
+  setCommands: (commands: CommandRecord[]) => set({ commands }),
 }));

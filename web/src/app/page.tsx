@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useBotStore, type BotLiveData } from '@/lib/store';
 import { useControlStore } from '@/lib/controlStore';
 import { useMissionStore } from '@/lib/missionStore';
-import { api, type BotEvent, type RoleAssignment, type CommandType } from '@/lib/api';
+import { api, type BotEvent, type RoleAssignmentRecord, type CommandType } from '@/lib/api';
 import { EVENT_CONFIG, getPersonalityColor, STATE_COLORS, STATE_LABELS, PERSONALITY_ICONS } from '@/lib/constants';
 import Link from 'next/link';
 
@@ -24,7 +24,7 @@ export default function DashboardPage() {
   const commands = useControlStore((s) => s.commands);
   const missions = useMissionStore((s) => s.missions);
 
-  const [roleMap, setRoleMap] = useState<Record<string, RoleAssignment>>({});
+  const [roleMap, setRoleMap] = useState<Record<string, RoleAssignmentRecord>>({});
   const [dismissedAlerts, setDismissedAlerts] = useState<Set<string>>(new Set());
 
   // --- Data fetching ---------------------------------------------------------
@@ -43,12 +43,12 @@ export default function DashboardPage() {
 
     // Missions
     api.getMissions({ limit: 50 }).then((data) => {
-      useMissionStore.getState().setMissions(data.missions);
+      useMissionStore.getState().setMissions(data.missions as any);
     }).catch(() => {});
 
     // Roles
     api.getRoleAssignments().then((data) => {
-      const map: Record<string, RoleAssignment> = {};
+      const map: Record<string, RoleAssignmentRecord> = {};
       for (const a of data.assignments) {
         map[a.botName.toLowerCase()] = a;
       }
@@ -140,7 +140,7 @@ export default function DashboardPage() {
             scope: c.scope,
             priority: c.priority,
             source: 'dashboard',
-            params: c.params,
+            payload: c.payload,
           }).catch(() => {});
           setDismissedAlerts((s) => new Set(s).add(k));
         },
@@ -441,7 +441,7 @@ function EnhancedBotCard({
 }: {
   bot: BotLiveData;
   index: number;
-  role?: RoleAssignment;
+  role?: RoleAssignmentRecord;
   pendingCount: number;
   isSelected: boolean;
   onToggleSelect: () => void;

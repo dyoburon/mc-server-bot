@@ -3,11 +3,7 @@
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import type { BotLiveData } from '@/lib/store';
-<<<<<<< HEAD
-import { useControlStore } from '@/lib/store';
-=======
-import { useRoleStore } from '@/lib/store';
->>>>>>> worktree-agent-a4af1233
+import { useControlStore, useRoleStore } from '@/lib/store';
 import { getPersonalityColor, STATE_COLORS, STATE_LABELS, PERSONALITY_ICONS } from '@/lib/constants';
 
 const ROLE_COLORS: Record<string, string> = {
@@ -46,13 +42,10 @@ export function BotCard({ bot, index = 0 }: { bot: BotLiveData; index?: number }
   const stateLabel = STATE_LABELS[bot.state] ?? bot.state;
   const isActive = !['IDLE', 'DISCONNECTED', 'SPAWNING'].includes(bot.state);
   const emoji = PERSONALITY_ICONS[bot.personality?.toLowerCase()] ?? '';
-<<<<<<< HEAD
   const isSelected = useControlStore((s) => s.selectedBotIds.has(bot.name));
   const toggleBotSelection = useControlStore((s) => s.toggleBotSelection);
-=======
   const roleAssignment = useRoleStore((s) => s.assignments.find((a) => a.botName === bot.name));
   const roleColor = roleAssignment ? (ROLE_COLORS[roleAssignment.role] ?? '#6B7280') : null;
->>>>>>> worktree-agent-a4af1233
 
   return (
     <motion.div

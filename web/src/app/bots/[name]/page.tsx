@@ -4,11 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { motion } from 'framer-motion';
 import Link from 'next/link';
-<<<<<<< HEAD
 import { api, type BotDetailed, type ChatMessage, type RoleAssignmentRecord } from '@/lib/api';
-=======
-import { api, type BotDetailed, type ChatMessage, type RoleAssignmentRecord, type OverrideRecord } from '@/lib/api';
->>>>>>> worktree-agent-a7aea609
 import { getPersonalityColor, getAffinityTier, STATE_COLORS, STATE_LABELS, PERSONALITY_ICONS } from '@/lib/constants';
 import { formatItemName, getItemCategoryColorByName } from '@/lib/items';
 import { ROLE_COLORS, ROLE_ICONS } from '@/components/RoleAssignmentPanel';
@@ -35,10 +31,6 @@ export default function BotProfilePage() {
   const [showCompleted, setShowCompleted] = useState(false);
   const [showFailed, setShowFailed] = useState(false);
   const [roleAssignment, setRoleAssignment] = useState<RoleAssignmentRecord | null>(null);
-<<<<<<< HEAD
-=======
-  const [override, setOverride] = useState<OverrideRecord | null>(null);
->>>>>>> worktree-agent-a7aea609
 
   useEffect(() => {
     const load = () => {
@@ -49,10 +41,6 @@ export default function BotProfilePage() {
         const match = data.assignments.find((a) => a.botName === name);
         setRoleAssignment(match || null);
       }).catch(() => {});
-<<<<<<< HEAD
-=======
-      api.getBotOverride(name).then((data) => setOverride(data.override)).catch(() => {});
->>>>>>> worktree-agent-a7aea609
     };
     load();
     const interval = setInterval(load, 5000);
@@ -110,7 +98,7 @@ export default function BotProfilePage() {
         <span className="text-zinc-400">{bot.name}</span>
       </div>
 
-      {/* ═══ HERO SECTION ═══ */}
+      {/* HERO SECTION */}
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
@@ -144,23 +132,6 @@ export default function BotProfilePage() {
                     }`}>
                       {roleAssignment.autonomyLevel}
                     </span>
-<<<<<<< HEAD
-=======
-                    {override && (
-                      <span
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium text-orange-400 bg-orange-500/10 border border-orange-500/25 cursor-pointer hover:bg-orange-500/20 transition-colors"
-                        title={`Override active since ${new Date(override.at).toLocaleTimeString()} — ${override.reason}. Click to clear.`}
-                        onClick={() => { api.clearBotOverride(name).then(() => setOverride(null)).catch(() => {}); }}
-                      >
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                          <line x1="12" y1="9" x2="12" y2="13" />
-                          <line x1="12" y1="17" x2="12.01" y2="17" />
-                        </svg>
-                        Override Active
-                      </span>
-                    )}
->>>>>>> worktree-agent-a7aea609
                   </div>
                 );
               })()}
@@ -216,7 +187,7 @@ export default function BotProfilePage() {
         </div>
       </motion.div>
 
-      {/* ═══ BODY: 2-column layout ═══ */}
+      {/* BODY: 2-column layout */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
         {/* LEFT COLUMN (3/5) */}
         <div className="lg:col-span-3 space-y-5">
@@ -481,7 +452,7 @@ export default function BotProfilePage() {
   );
 }
 
-// ─── Shared sub-components ───
+// --- Shared sub-components ---
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (

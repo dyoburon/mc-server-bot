@@ -2,11 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-<<<<<<< HEAD
-import { api, SupplyChain, ChainTemplate, ChainStage } from '@/lib/api';
-=======
 import { api, SupplyChain, ChainTemplate, ChainStage, MissionRecord } from '@/lib/api';
->>>>>>> worktree-agent-a4af1233
 import { useBotStore } from '@/lib/store';
 import { PageHeader } from '@/components/PageHeader';
 
@@ -26,8 +22,6 @@ const CHAIN_STATUS_COLORS: Record<string, string> = {
   failed: '#EF4444',
 };
 
-<<<<<<< HEAD
-=======
 const MISSION_STATUS_COLORS: Record<string, string> = {
   draft: '#6B7280',
   queued: '#F59E0B',
@@ -38,7 +32,6 @@ const MISSION_STATUS_COLORS: Record<string, string> = {
   cancelled: '#6B7280',
 };
 
->>>>>>> worktree-agent-a4af1233
 function StatusBadge({ status, colors }: { status: string; colors: Record<string, string> }) {
   const color = colors[status] ?? '#6B7280';
   return (
@@ -74,10 +67,7 @@ function emptyStage(): StageFormData {
 
 function ChainCard({
   chain,
-<<<<<<< HEAD
-=======
   mission,
->>>>>>> worktree-agent-a4af1233
   onSelect,
   onStart,
   onPause,
@@ -85,10 +75,7 @@ function ChainCard({
   onDelete,
 }: {
   chain: SupplyChain;
-<<<<<<< HEAD
-=======
   mission?: MissionRecord | null;
->>>>>>> worktree-agent-a4af1233
   onSelect: () => void;
   onStart: () => void;
   onPause: () => void;
@@ -125,8 +112,6 @@ function ChainCard({
         )}
       </div>
 
-<<<<<<< HEAD
-=======
       {/* Mission link */}
       {mission && (
         <div className="flex items-center gap-2 mb-3 bg-zinc-800/40 rounded-lg px-2.5 py-1.5">
@@ -135,7 +120,6 @@ function ChainCard({
         </div>
       )}
 
->>>>>>> worktree-agent-a4af1233
       {/* Mini stage indicators */}
       <div className="flex items-center gap-1 mb-4">
         {chain.stages.map((stage, i) => {
@@ -278,10 +262,6 @@ function CreateChainForm({
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-<<<<<<< HEAD
-  // When template selected, populate stages
-=======
->>>>>>> worktree-agent-a4af1233
   const handleTemplateChange = (templateId: string) => {
     setSelectedTemplate(templateId);
     const tmpl = templates.find((t) => t.id === templateId);
@@ -429,10 +409,7 @@ function CreateChainForm({
           </div>
         </div>
 
-<<<<<<< HEAD
         {/* Template selector */}
-=======
->>>>>>> worktree-agent-a4af1233
         {mode === 'template' && (
           <div>
             <label className="block text-[11px] font-medium text-zinc-400 mb-1.5">Template</label>
@@ -578,20 +555,14 @@ function CreateChainForm({
 
 function ChainDetail({
   chain,
-<<<<<<< HEAD
-=======
   mission,
->>>>>>> worktree-agent-a4af1233
   onBack,
   onStart,
   onPause,
   onCancel,
 }: {
   chain: SupplyChain;
-<<<<<<< HEAD
-=======
   mission?: MissionRecord | null;
->>>>>>> worktree-agent-a4af1233
   onBack: () => void;
   onStart: () => void;
   onPause: () => void;
@@ -620,8 +591,6 @@ function ChainDetail({
         <StatusBadge status={chain.status} colors={CHAIN_STATUS_COLORS} />
       </div>
 
-<<<<<<< HEAD
-=======
       {/* Mission status */}
       {mission && (
         <div className="flex items-center gap-3 bg-zinc-800/40 rounded-lg px-3 py-2 mb-4">
@@ -631,7 +600,6 @@ function ChainDetail({
         </div>
       )}
 
->>>>>>> worktree-agent-a4af1233
       {/* Action buttons */}
       <div className="flex items-center gap-2 mb-6">
         {(chain.status === 'idle' || chain.status === 'paused') && (
@@ -700,10 +668,7 @@ export default function ChainsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [selectedChainId, setSelectedChainId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-<<<<<<< HEAD
-=======
   const [chainMissions, setChainMissions] = useState<Record<string, MissionRecord>>({});
->>>>>>> worktree-agent-a4af1233
 
   const botList = useBotStore((s) => s.botList);
   const storeChains = useBotStore((s) => s.chains);
@@ -717,10 +682,7 @@ export default function ChainsPage() {
       setLocalChains(data.chains);
       setStoreChains(data.chains);
     } catch {
-<<<<<<< HEAD
       // API may not exist yet
-=======
->>>>>>> worktree-agent-a4af1233
       setLocalChains([]);
     }
   }, [setStoreChains]);
@@ -738,10 +700,7 @@ export default function ChainsPage() {
     Promise.all([fetchChains(), fetchTemplates()]).finally(() => setLoading(false));
   }, [fetchChains, fetchTemplates]);
 
-<<<<<<< HEAD
   // Sync store chains to local state
-=======
->>>>>>> worktree-agent-a4af1233
   useEffect(() => {
     if (storeChains.length > 0) {
       setLocalChains(storeChains);
@@ -754,8 +713,6 @@ export default function ChainsPage() {
     try {
       await api.startChain(id);
       await fetchChains();
-<<<<<<< HEAD
-=======
 
       // Create a mission for this chain
       const chain = chains.find((c) => c.id === id);
@@ -776,7 +733,6 @@ export default function ChainsPage() {
           // Mission creation is best-effort
         }
       }
->>>>>>> worktree-agent-a4af1233
     } catch (err: any) {
       setError(err.message);
     }
@@ -795,8 +751,6 @@ export default function ChainsPage() {
     try {
       await api.cancelChain(id);
       await fetchChains();
-<<<<<<< HEAD
-=======
       // Also cancel linked mission
       const mission = chainMissions[id];
       if (mission) {
@@ -807,7 +761,6 @@ export default function ChainsPage() {
           return next;
         });
       }
->>>>>>> worktree-agent-a4af1233
     } catch (err: any) {
       setError(err.message);
     }
@@ -858,10 +811,7 @@ export default function ChainsPage() {
           <ChainDetail
             key="detail"
             chain={selectedChain}
-<<<<<<< HEAD
-=======
             mission={chainMissions[selectedChain.id]}
->>>>>>> worktree-agent-a4af1233
             onBack={() => setSelectedChainId(null)}
             onStart={() => handleStart(selectedChain.id)}
             onPause={() => handlePause(selectedChain.id)}
@@ -869,10 +819,7 @@ export default function ChainsPage() {
           />
         ) : (
           <motion.div key="list" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-<<<<<<< HEAD
             {/* Header with create button */}
-=======
->>>>>>> worktree-agent-a4af1233
             <div className="flex items-center justify-between mb-5">
               <p className="text-xs text-zinc-500">{chains.length} chain{chains.length !== 1 ? 's' : ''}</p>
               <button
@@ -896,10 +843,7 @@ export default function ChainsPage() {
               )}
             </AnimatePresence>
 
-<<<<<<< HEAD
             {/* Chain list */}
-=======
->>>>>>> worktree-agent-a4af1233
             {chains.length === 0 && !showCreate ? (
               <div className="flex flex-col items-center justify-center h-48 text-zinc-500">
                 <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="mb-3 opacity-40">
@@ -916,10 +860,7 @@ export default function ChainsPage() {
                     <ChainCard
                       key={chain.id}
                       chain={chain}
-<<<<<<< HEAD
-=======
                       mission={chainMissions[chain.id]}
->>>>>>> worktree-agent-a4af1233
                       onSelect={() => setSelectedChainId(chain.id)}
                       onStart={() => handleStart(chain.id)}
                       onPause={() => handlePause(chain.id)}

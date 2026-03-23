@@ -51,7 +51,7 @@ export default function CommanderPage() {
     setExecuting(true);
     setError(null);
     try {
-      const data = await api.executeCommanderPlan(plan.planId);
+      const data = await api.executeCommanderPlan(plan.id);
       setResult(data.result);
       setHistory((prev) => [
         { input, plan, result: data.result, timestamp: Date.now() },
@@ -282,7 +282,7 @@ export default function CommanderPage() {
                       <polyline points="20 6 9 17 4 12" />
                     </svg>
                     <span>{m.title}</span>
-                    <span className="text-zinc-500">{m.assignees.join(', ')}</span>
+                    <span className="text-zinc-500">{m.assigneeIds.join(', ')}</span>
                   </div>
                 ))}
               </div>
@@ -370,7 +370,7 @@ export default function CommanderPage() {
                         <div className="px-4 py-3 space-y-3">
                           <div>
                             <p className="text-[10px] text-zinc-600 mb-1">Intent</p>
-                            <p className="text-xs text-zinc-400">{entry.plan.intent}</p>
+                            <p className="text-xs text-zinc-400">{entry.plan.parsedIntent}</p>
                           </div>
                           <div>
                             <p className="text-[10px] text-zinc-600 mb-1">Confidence</p>
@@ -400,7 +400,7 @@ export default function CommanderPage() {
                               <p className="text-[10px] text-zinc-600 mb-1">Missions</p>
                               {entry.result.missionsCreated.map((m, j) => (
                                 <div key={j} className="text-xs text-zinc-400">
-                                  {m.title} ({m.assignees.join(', ')})
+                                  {m.title} ({m.assigneeIds.join(', ')})
                                 </div>
                               ))}
                             </div>
