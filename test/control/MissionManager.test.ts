@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Mock fs before importing the module
 vi.mock('fs', () => ({
@@ -34,9 +34,15 @@ describe('MissionManager', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useFakeTimers();
     io = createMockIO();
     bm = createMockBotManager();
     mm = new MissionManager(bm, io);
+  });
+
+  afterEach(() => {
+    mm.shutdown();
+    vi.useRealTimers();
   });
 
   it('creates a mission with valid fields', () => {
@@ -400,5 +406,91 @@ describe('MissionManager', () => {
     const events = io.emit.mock.calls.map((c: any[]) => c[0]);
     expect(events).toContain('mission:cancelled');
     expect(events).toContain('mission:updated');
+  });
+
+  // ── Cleanup ──────────────────────────────────────
+
+  it('cleanup removes old completed/failed missions', () => {
+    const mission = mm.createMission({
+      type: 'gather_items',
+      title: 'Old completed task',
+      assigneeType: 'bot',
+      assigneeIds: ['TestBot'],
+    });
+    mm.updateMissionStatus(mission.id, 'running');
+    mm.updateMissionStatus(mission.id, 'completed');
+
+    // Backdate createdAt to 25 hours ago
+    const record = mm.getMission(mission.id)!;
+    record.createdAt = Date.now() - 25 * 60 * 60 * 1000;
+
+    mm.cleanup();
+    expect(mm.getMission(mission.id)).toBeUndefined();
+  });
+
+  it('cleanup caps at 200 missions', () => {
+    for (let i = 0; i < 210; i++) {
+      mm.createMission({
+        type: 'gather_items',
+        title: `Task ${i}`,
+        assigneeType: 'bot',
+        assigneeIds: ['TestBot'],
+      });
+    }
+    expect(mm.getMissions({ limit: 300 })).toHaveLength(210);
+    mm.cleanup();
+    expect(mm.getMissions({ limit: 300 })).toHaveLength(200);
+  });
+
+  // ── Shutdown ──────────────────────────────────────
+
+  it('shutdown cancels all running and queued missions', () => {
+    const m1 = mm.createMission({
+      type: 'gather_items',
+      title: 'Running task',
+      assigneeType: 'bot',
+      assigneeIds: ['TestBot'],
+    });
+    mm.updateMissionStatus(m1.id, 'running');
+
+    const m2 = mm.createMission({
+      type: 'gather_items',
+      title: 'Queued task',
+      assigneeType: 'bot',
+      assigneeIds: ['TestBot'],
+    });
+
+    mm.shutdown();
+
+    expect(mm.getMission(m1.id)!.status).toBe('cancelled');
+    expect(mm.getMission(m1.id)!.blockedReason).toBe('server shutdown');
+    expect(mm.getMission(m2.id)!.status).toBe('cancelled');
+  });
+
+  // ── Debounced persistence ──────────────────────────
+
+  it('save is debounced — writes after 1 second', async () => {
+    const fs = await import('fs');
+    const writeFileSync = vi.mocked(fs.default.writeFileSync);
+    writeFileSync.mockClear();
+
+    mm.createMission({
+      type: 'gather_items',
+      title: 'Task 1',
+      assigneeType: 'bot',
+      assigneeIds: ['TestBot'],
+    });
+    mm.createMission({
+      type: 'gather_items',
+      title: 'Task 2',
+      assigneeType: 'bot',
+      assigneeIds: ['TestBot'],
+    });
+
+    const writeCalls = writeFileSync.mock.calls.length;
+
+    vi.advanceTimersByTime(1_100);
+
+    expect(writeFileSync.mock.calls.length).toBeGreaterThan(writeCalls);
   });
 });

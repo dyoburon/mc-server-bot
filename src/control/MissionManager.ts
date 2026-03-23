@@ -15,9 +15,12 @@ import {
   MISSION_EVENTS,
 } from './MissionTypes';
 
-const DATA_DIR = './data';
+const DATA_DIR = path.join(process.cwd(), 'data');
 const MISSIONS_FILE = path.join(DATA_DIR, 'missions.json');
 const STALE_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
+const MAX_MISSIONS = 200;
+const MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
+const DEBOUNCE_MS = 1_000;
 
 export interface CreateMissionParams {
   type: MissionType;
@@ -48,11 +51,14 @@ export class MissionManager {
   private commandCenter?: CommandCenter;
   /** Tracks which task description was queued for a running mission (missionId → description) */
   private missionTaskDescriptions: Map<string, string> = new Map();
+  private saveTimer: ReturnType<typeof setTimeout> | null = null;
+  private saveDirty = false;
 
   constructor(botManager: BotManager, io: SocketIOServer) {
     this.botManager = botManager;
     this.io = io;
     this.load();
+    this.cleanup();
   }
 
   // ── Coordinator adapters ────────────────────────────
@@ -67,6 +73,65 @@ export class MissionManager {
 
   setCommandCenter(cc: CommandCenter): void {
     this.commandCenter = cc;
+  }
+
+  // ── Cleanup & Shutdown ──────────────────────────────
+
+  /** Remove completed/failed missions older than 24 hours and cap at 200 */
+  cleanup(): void {
+    const now = Date.now();
+    let removed = 0;
+    const terminalStatuses: MissionStatus[] = ['completed', 'failed', 'cancelled'];
+
+    for (const [id, mission] of this.missions) {
+      if (terminalStatuses.includes(mission.status)) {
+        const age = now - mission.createdAt;
+        if (age > MAX_AGE_MS) {
+          this.missions.delete(id);
+          removed++;
+        }
+      }
+    }
+
+    // Cap at MAX_MISSIONS (keep newest)
+    if (this.missions.size > MAX_MISSIONS) {
+      const sorted = [...this.missions.entries()]
+        .sort((a, b) => b[1].createdAt - a[1].createdAt);
+      const toRemove = sorted.slice(MAX_MISSIONS);
+      for (const [id] of toRemove) {
+        this.missions.delete(id);
+        removed++;
+      }
+    }
+
+    if (removed > 0) {
+      logger.info({ removed, remaining: this.missions.size }, 'Mission history cleaned up');
+      this.saveImmediate();
+    }
+  }
+
+  /** Graceful shutdown: cancel active missions, save, clear timers */
+  shutdown(): void {
+    for (const mission of this.missions.values()) {
+      if (mission.status === 'running' || mission.status === 'queued') {
+        mission.status = 'cancelled';
+        mission.completedAt = Date.now();
+        mission.updatedAt = Date.now();
+        mission.blockedReason = 'server shutdown';
+        this.missionTaskDescriptions.delete(mission.id);
+        logger.info(
+          { missionId: mission.id, botName: mission.assigneeIds[0], type: mission.type, status: 'cancelled', source: mission.source },
+          'Mission cancelled on shutdown',
+        );
+      }
+    }
+
+    this.saveImmediate();
+
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = null;
+    }
   }
 
   // ── ID generation ──────────────────────────────────
@@ -106,7 +171,10 @@ export class MissionManager {
 
     this.save();
     this.io.emit(MISSION_EVENTS.CREATED, mission);
-    logger.info({ missionId: mission.id, title: mission.title, assignees: mission.assigneeIds }, 'Mission created');
+    logger.info(
+      { missionId: mission.id, botName: mission.assigneeIds[0], type: mission.type, status: mission.status, source: mission.source },
+      'Mission created',
+    );
     return mission;
   }
 
@@ -180,10 +248,27 @@ export class MissionManager {
     }
     this.io.emit(MISSION_EVENTS.UPDATED, mission);
 
-    logger.info(
-      { missionId: id, oldStatus, newStatus, reason: metadata?.reason },
-      'Mission status updated'
-    );
+    const durationMs = mission.startedAt && mission.completedAt
+      ? mission.completedAt - mission.startedAt
+      : mission.startedAt
+        ? Date.now() - mission.startedAt
+        : undefined;
+
+    const fields: Record<string, unknown> = {
+      missionId: id,
+      botName: mission.assigneeIds[0],
+      type: mission.type,
+      status: newStatus,
+      source: mission.source,
+    };
+    if (durationMs !== undefined) fields.durationMs = durationMs;
+    if (metadata?.reason) fields.reason = metadata.reason;
+
+    if (newStatus === 'failed' || newStatus === 'cancelled') {
+      logger.warn(fields, 'Mission status updated');
+    } else {
+      logger.info(fields, 'Mission status updated');
+    }
     return mission;
   }
 
@@ -569,27 +654,48 @@ export class MissionManager {
 
   private load(): void {
     try {
-      if (fs.existsSync(MISSIONS_FILE)) {
-        const raw = fs.readFileSync(MISSIONS_FILE, 'utf-8');
-        const data = JSON.parse(raw) as {
-          missions: MissionRecord[];
-          botQueues: Record<string, string[]>;
-        };
+      if (!fs.existsSync(MISSIONS_FILE)) return;
 
-        for (const m of data.missions ?? []) {
-          this.missions.set(m.id, m);
-        }
-        for (const [botName, ids] of Object.entries(data.botQueues ?? {})) {
-          this.botMissionQueues.set(botName, ids);
-        }
-        logger.info({ count: this.missions.size }, 'Loaded missions from disk');
+      const raw = fs.readFileSync(MISSIONS_FILE, 'utf-8');
+      const data = JSON.parse(raw) as {
+        missions: MissionRecord[];
+        botQueues: Record<string, string[]>;
+      };
+
+      if (!Array.isArray(data?.missions)) {
+        logger.warn('Missions file is corrupt (missing missions array), starting fresh');
+        return;
       }
+
+      for (const m of data.missions) {
+        this.missions.set(m.id, m);
+      }
+      for (const [botName, ids] of Object.entries(data.botQueues ?? {})) {
+        this.botMissionQueues.set(botName, ids);
+      }
+      logger.info({ count: this.missions.size }, 'Loaded missions from disk');
     } catch (err: any) {
-      logger.warn({ err: err.message }, 'Failed to load missions file, starting fresh');
+      logger.warn({ err: err?.message }, 'Failed to load missions file, starting fresh');
+      this.missions.clear();
+      this.botMissionQueues.clear();
     }
   }
 
+  /** Schedule a debounced save */
   private save(): void {
+    this.saveDirty = true;
+    if (this.saveTimer) return;
+    this.saveTimer = setTimeout(() => {
+      this.saveTimer = null;
+      if (this.saveDirty) {
+        this.saveImmediate();
+      }
+    }, DEBOUNCE_MS);
+  }
+
+  /** Write to disk immediately (called on shutdown and cleanup) */
+  private saveImmediate(): void {
+    this.saveDirty = false;
     try {
       if (!fs.existsSync(DATA_DIR)) {
         fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -601,7 +707,7 @@ export class MissionManager {
       };
       fs.writeFileSync(MISSIONS_FILE, JSON.stringify(data, null, 2), 'utf-8');
     } catch (err: any) {
-      logger.error({ err: err.message }, 'Failed to save missions file');
+      logger.error({ err: err?.message }, 'Failed to save missions file');
     }
   }
 }

@@ -6,6 +6,7 @@ import * as path from 'path';
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 const SQUADS_FILE = path.join(DATA_DIR, 'squads.json');
+const DEBOUNCE_MS = 1_000;
 
 function generateId(): string {
   return `sqd_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -14,6 +15,7 @@ function generateId(): string {
 export class SquadManager {
   private squads: Map<string, SquadRecord> = new Map();
   private io: SocketIOServer;
+  private saveTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(io: SocketIOServer) {
     this.io = io;
@@ -24,20 +26,38 @@ export class SquadManager {
 
   private load(): void {
     try {
-      if (fs.existsSync(SQUADS_FILE)) {
-        const raw = fs.readFileSync(SQUADS_FILE, 'utf-8');
-        const records: SquadRecord[] = JSON.parse(raw);
-        for (const rec of records) {
-          this.squads.set(rec.id, rec);
-        }
-        logger.info({ count: records.length }, 'Loaded squads from disk');
+      if (!fs.existsSync(SQUADS_FILE)) return;
+
+      const raw = fs.readFileSync(SQUADS_FILE, 'utf-8');
+      const records = JSON.parse(raw);
+
+      if (!Array.isArray(records)) {
+        logger.warn('squads.json is corrupt (not an array), starting fresh');
+        return;
       }
+
+      for (const rec of records) {
+        this.squads.set(rec.id, rec);
+      }
+      logger.info({ count: records.length }, 'Loaded squads from disk');
     } catch (err) {
       logger.warn({ err }, 'Failed to load squads.json, starting fresh');
+      this.squads.clear();
     }
   }
 
+  /** Schedule a debounced save */
   private save(): void {
+    if (this.saveTimer) return;
+    this.saveTimer = setTimeout(() => {
+      this.saveTimer = null;
+      this.saveImmediate();
+    }, DEBOUNCE_MS);
+  }
+
+  /** Write to disk immediately */
+  private saveImmediate(): void {
+    if (this.saveTimer) { clearTimeout(this.saveTimer); this.saveTimer = null; }
     try {
       if (!fs.existsSync(DATA_DIR)) {
         fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -47,6 +67,11 @@ export class SquadManager {
     } catch (err) {
       logger.error({ err }, 'Failed to save squads.json');
     }
+  }
+
+  /** Flush pending saves and clear timers */
+  shutdown(): void {
+    this.saveImmediate();
   }
 
   private emitUpdate(): void {
@@ -74,7 +99,7 @@ export class SquadManager {
     this.squads.set(squad.id, squad);
     this.save();
     this.emitUpdate();
-    logger.info({ squadId: squad.id, name: squad.name }, 'Squad created');
+    logger.info({ squadId: squad.id, name: squad.name, action: 'create' }, 'Squad created');
     return squad;
   }
 
@@ -101,16 +126,17 @@ export class SquadManager {
     this.squads.set(id, updated);
     this.save();
     this.emitUpdate();
-    logger.info({ squadId: id }, 'Squad updated');
+    logger.info({ squadId: id, name: updated.name, action: 'update' }, 'Squad updated');
     return updated;
   }
 
   deleteSquad(id: string): boolean {
+    const squad = this.squads.get(id);
     const existed = this.squads.delete(id);
     if (existed) {
       this.save();
       this.emitUpdate();
-      logger.info({ squadId: id }, 'Squad deleted');
+      logger.info({ squadId: id, name: squad?.name, action: 'delete' }, 'Squad deleted');
     }
     return existed;
   }
@@ -126,7 +152,7 @@ export class SquadManager {
     squad.updatedAt = Date.now();
     this.save();
     this.emitUpdate();
-    logger.info({ squadId, botName }, 'Bot added to squad');
+    logger.info({ squadId, name: squad.name, action: 'add_bot' }, 'Bot added to squad');
     return true;
   }
 
@@ -141,7 +167,7 @@ export class SquadManager {
     squad.updatedAt = Date.now();
     this.save();
     this.emitUpdate();
-    logger.info({ squadId, botName }, 'Bot removed from squad');
+    logger.info({ squadId, name: squad.name, action: 'remove_bot' }, 'Bot removed from squad');
     return true;
   }
 

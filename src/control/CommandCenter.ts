@@ -35,6 +35,10 @@ interface CommandFilters {
 
 const DATA_PATH = path.join(process.cwd(), 'data', 'commands.json');
 const MAX_PERSISTED = 500;
+/** Max age for commands before cleanup removes them (24 hours) */
+const MAX_AGE_MS = 24 * 60 * 60 * 1000;
+/** Debounce interval for batching persistence writes (ms) */
+const DEBOUNCE_MS = 1_000;
 
 /** Command types that involve pathfinder-based movement */
 const MOVEMENT_COMMAND_TYPES: ReadonlySet<CommandType> = new Set([
@@ -57,16 +61,49 @@ export class CommandCenter {
   private io: SocketIOServer;
   private markerStore: MarkerStore | null;
   private timeoutTimer: ReturnType<typeof setInterval> | null = null;
+  private saveTimer: ReturnType<typeof setTimeout> | null = null;
+  private saveDirty = false;
 
   constructor(botManager: BotManager, io: SocketIOServer, markerStore?: MarkerStore) {
     this.botManager = botManager;
     this.io = io;
     this.markerStore = markerStore ?? null;
     this.loadFromDisk();
+    this.cleanup();
     this.startTimeoutChecker();
   }
 
   // ── Cleanup ─────────────────────────────────────────────
+
+  /** Remove commands older than 24 hours and cap history at 500 */
+  cleanup(): void {
+    const now = Date.now();
+    let removed = 0;
+
+    for (const [id, cmd] of this.commands) {
+      const age = now - new Date(cmd.createdAt).getTime();
+      if (age > MAX_AGE_MS) {
+        this.commands.delete(id);
+        removed++;
+      }
+    }
+
+    // Cap at MAX_PERSISTED (keep newest)
+    if (this.commands.size > MAX_PERSISTED) {
+      const sorted = [...this.commands.entries()]
+        .sort((a, b) => b[1].createdAt.localeCompare(a[1].createdAt));
+      const toRemove = sorted.slice(MAX_PERSISTED);
+      for (const [id] of toRemove) {
+        this.commands.delete(id);
+        removed++;
+      }
+    }
+
+    if (removed > 0) {
+      logger.info({ removed, remaining: this.commands.size }, 'Command history cleaned up');
+      this.persistImmediate();
+    }
+  }
 
   /** Stop the timeout checker interval (call on shutdown) */
   destroy(): void {
@@ -74,6 +111,35 @@ export class CommandCenter {
       clearInterval(this.timeoutTimer);
       this.timeoutTimer = null;
     }
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = null;
+    }
+  }
+
+  /** Graceful shutdown: cancel active commands, save, clear timers */
+  shutdown(): void {
+    // Cancel all active (started) commands
+    for (const command of this.commands.values()) {
+      if (command.status === 'started' || command.status === 'queued') {
+        if (command.status === 'started' && MOVEMENT_COMMAND_TYPES.has(command.type)) {
+          this.stopPathfinderForTargets(command.targets);
+        }
+        command.error = { code: 'CANCELLED', message: 'server shutdown' };
+        command.status = 'cancelled';
+        command.completedAt = new Date().toISOString();
+        logger.info(
+          { commandId: command.id, botName: command.targets[0], type: command.type, status: 'cancelled', source: command.source },
+          'Command cancelled on shutdown',
+        );
+      }
+    }
+
+    // Immediate save
+    this.persistImmediate();
+
+    // Clear all timers
+    this.destroy();
   }
 
   // ── ID generation ──────────────────────────────────────────
@@ -674,7 +740,7 @@ export class CommandCenter {
 
   // ── Status lifecycle ───────────────────────────────────────
 
-  /** Task 6: Structured logging for every lifecycle transition */
+  /** Structured logging for every lifecycle transition */
   private logLifecycle(command: CommandRecord, message: string): void {
     const durationMs = command.startedAt && command.completedAt
       ? new Date(command.completedAt).getTime() - new Date(command.startedAt).getTime()
@@ -682,16 +748,20 @@ export class CommandCenter {
         ? Date.now() - new Date(command.startedAt).getTime()
         : undefined;
 
-    logger.info(
-      {
-        commandId: command.id,
-        botName: command.targets[0],
-        type: command.type,
-        status: command.status,
-        ...(durationMs !== undefined ? { durationMs } : {}),
-      },
-      message,
-    );
+    const fields: Record<string, unknown> = {
+      commandId: command.id,
+      botName: command.targets[0],
+      type: command.type,
+      status: command.status,
+      source: command.source,
+    };
+    if (durationMs !== undefined) fields.durationMs = durationMs;
+
+    if (command.status === 'failed' || command.status === 'cancelled') {
+      logger.warn(fields, message);
+    } else {
+      logger.info(fields, message);
+    }
   }
 
   private updateStatus(command: CommandRecord, status: CommandStatus): void {
@@ -733,7 +803,21 @@ export class CommandCenter {
 
   // ── Persistence ────────────────────────────────────────────
 
+  /** Schedule a debounced save (batches writes within DEBOUNCE_MS) */
   private persist(): void {
+    this.saveDirty = true;
+    if (this.saveTimer) return;
+    this.saveTimer = setTimeout(() => {
+      this.saveTimer = null;
+      if (this.saveDirty) {
+        this.persistImmediate();
+      }
+    }, DEBOUNCE_MS);
+  }
+
+  /** Write to disk immediately (called on shutdown and cleanup) */
+  private persistImmediate(): void {
+    this.saveDirty = false;
     try {
       // Keep only the most recent commands
       const all = [...this.commands.values()]
@@ -758,13 +842,19 @@ export class CommandCenter {
       const raw = fs.readFileSync(DATA_PATH, 'utf-8');
       const data = JSON.parse(raw) as { commands: CommandRecord[] };
 
+      if (!Array.isArray(data?.commands)) {
+        logger.warn('Commands file is corrupt (missing commands array), starting fresh');
+        return;
+      }
+
       for (const cmd of data.commands) {
         this.commands.set(cmd.id, cmd);
       }
 
       logger.info({ count: data.commands.length }, 'Loaded persisted commands');
     } catch (err) {
-      logger.error({ err }, 'Failed to load persisted commands');
+      logger.warn({ err }, 'Failed to load persisted commands, starting fresh');
+      this.commands.clear();
     }
   }
 }

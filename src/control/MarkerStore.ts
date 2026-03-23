@@ -7,10 +7,15 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 
 const DATA_DIR = path.join(process.cwd(), 'data');
+const DEBOUNCE_MS = 1_000;
 
 function ensureDataDir(): void {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+  } catch (err) {
+    logger.error({ err }, 'Failed to create data directory');
   }
 }
 
@@ -26,8 +31,12 @@ function loadJson<T>(filePath: string, fallback: T): T {
 }
 
 function saveJson(filePath: string, data: unknown): void {
-  ensureDataDir();
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
+  try {
+    ensureDataDir();
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
+  } catch (err) {
+    logger.error({ err, filePath }, 'Failed to save JSON file');
+  }
 }
 
 function genId(prefix: string): string {
@@ -42,6 +51,10 @@ export class MarkerStore {
   private markersPath = path.join(DATA_DIR, 'markers.json');
   private zonesPath = path.join(DATA_DIR, 'zones.json');
   private routesPath = path.join(DATA_DIR, 'routes.json');
+
+  private markerSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  private zoneSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  private routeSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private io: SocketIOServer) {
     this.load();
@@ -65,15 +78,49 @@ export class MarkerStore {
   }
 
   private saveMarkers(): void {
+    if (this.markerSaveTimer) return;
+    this.markerSaveTimer = setTimeout(() => {
+      this.markerSaveTimer = null;
+      saveJson(this.markersPath, Array.from(this.markers.values()));
+    }, DEBOUNCE_MS);
+  }
+
+  private saveMarkersImmediate(): void {
+    if (this.markerSaveTimer) { clearTimeout(this.markerSaveTimer); this.markerSaveTimer = null; }
     saveJson(this.markersPath, Array.from(this.markers.values()));
   }
 
   private saveZones(): void {
+    if (this.zoneSaveTimer) return;
+    this.zoneSaveTimer = setTimeout(() => {
+      this.zoneSaveTimer = null;
+      saveJson(this.zonesPath, Array.from(this.zones.values()));
+    }, DEBOUNCE_MS);
+  }
+
+  private saveZonesImmediate(): void {
+    if (this.zoneSaveTimer) { clearTimeout(this.zoneSaveTimer); this.zoneSaveTimer = null; }
     saveJson(this.zonesPath, Array.from(this.zones.values()));
   }
 
   private saveRoutes(): void {
+    if (this.routeSaveTimer) return;
+    this.routeSaveTimer = setTimeout(() => {
+      this.routeSaveTimer = null;
+      saveJson(this.routesPath, Array.from(this.routes.values()));
+    }, DEBOUNCE_MS);
+  }
+
+  private saveRoutesImmediate(): void {
+    if (this.routeSaveTimer) { clearTimeout(this.routeSaveTimer); this.routeSaveTimer = null; }
     saveJson(this.routesPath, Array.from(this.routes.values()));
+  }
+
+  /** Flush all pending saves and clear timers */
+  shutdown(): void {
+    this.saveMarkersImmediate();
+    this.saveZonesImmediate();
+    this.saveRoutesImmediate();
   }
 
   // ── Markers ──────────────────────────────────────────────
@@ -99,7 +146,7 @@ export class MarkerStore {
     this.markers.set(marker.id, marker);
     this.saveMarkers();
     this.io.emit(WORLD_EVENTS.MARKER_CREATED, marker);
-    logger.info({ markerId: marker.id, name: marker.name }, 'Marker created');
+    logger.info({ markerId: marker.id, name: marker.name, kind: marker.kind }, 'Marker created');
     return marker;
   }
 
@@ -118,16 +165,17 @@ export class MarkerStore {
     this.markers.set(id, updated);
     this.saveMarkers();
     this.io.emit(WORLD_EVENTS.MARKER_UPDATED, updated);
-    logger.info({ markerId: id }, 'Marker updated');
+    logger.info({ markerId: id, name: updated.name, kind: updated.kind }, 'Marker updated');
     return updated;
   }
 
   deleteMarker(id: string): boolean {
+    const marker = this.markers.get(id);
     const existed = this.markers.delete(id);
     if (existed) {
       this.saveMarkers();
       this.io.emit(WORLD_EVENTS.MARKER_UPDATED, { id, deleted: true });
-      logger.info({ markerId: id }, 'Marker deleted');
+      logger.info({ markerId: id, name: marker?.name, kind: marker?.kind }, 'Marker deleted');
     }
     return existed;
   }
