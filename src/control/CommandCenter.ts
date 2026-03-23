@@ -35,10 +35,13 @@ interface CommandFilters {
 
 const DATA_PATH = path.join(process.cwd(), 'data', 'commands.json');
 const MAX_PERSISTED = 500;
+<<<<<<< HEAD
 /** Max age for commands before cleanup removes them (24 hours) */
 const MAX_AGE_MS = 24 * 60 * 60 * 1000;
 /** Debounce interval for batching persistence writes (ms) */
 const DEBOUNCE_MS = 1_000;
+=======
+>>>>>>> worktree-agent-ad58abab
 
 /** Command types that involve pathfinder-based movement */
 const MOVEMENT_COMMAND_TYPES: ReadonlySet<CommandType> = new Set([
@@ -61,20 +64,27 @@ export class CommandCenter {
   private io: SocketIOServer;
   private markerStore: MarkerStore | null;
   private timeoutTimer: ReturnType<typeof setInterval> | null = null;
+<<<<<<< HEAD
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
   private saveDirty = false;
+=======
+>>>>>>> worktree-agent-ad58abab
 
   constructor(botManager: BotManager, io: SocketIOServer, markerStore?: MarkerStore) {
     this.botManager = botManager;
     this.io = io;
     this.markerStore = markerStore ?? null;
     this.loadFromDisk();
+<<<<<<< HEAD
     this.cleanup();
+=======
+>>>>>>> worktree-agent-ad58abab
     this.startTimeoutChecker();
   }
 
   // ── Cleanup ─────────────────────────────────────────────
 
+<<<<<<< HEAD
   /** Remove commands older than 24 hours and cap history at 500 */
   cleanup(): void {
     const now = Date.now();
@@ -105,12 +115,15 @@ export class CommandCenter {
     }
   }
 
+=======
+>>>>>>> worktree-agent-ad58abab
   /** Stop the timeout checker interval (call on shutdown) */
   destroy(): void {
     if (this.timeoutTimer) {
       clearInterval(this.timeoutTimer);
       this.timeoutTimer = null;
     }
+<<<<<<< HEAD
     if (this.saveTimer) {
       clearTimeout(this.saveTimer);
       this.saveTimer = null;
@@ -140,6 +153,8 @@ export class CommandCenter {
 
     // Clear all timers
     this.destroy();
+=======
+>>>>>>> worktree-agent-ad58abab
   }
 
   // ── ID generation ──────────────────────────────────────────
@@ -740,7 +755,11 @@ export class CommandCenter {
 
   // ── Status lifecycle ───────────────────────────────────────
 
+<<<<<<< HEAD
   /** Structured logging for every lifecycle transition */
+=======
+  /** Task 6: Structured logging for every lifecycle transition */
+>>>>>>> worktree-agent-ad58abab
   private logLifecycle(command: CommandRecord, message: string): void {
     const durationMs = command.startedAt && command.completedAt
       ? new Date(command.completedAt).getTime() - new Date(command.startedAt).getTime()
@@ -748,6 +767,7 @@ export class CommandCenter {
         ? Date.now() - new Date(command.startedAt).getTime()
         : undefined;
 
+<<<<<<< HEAD
     const fields: Record<string, unknown> = {
       commandId: command.id,
       botName: command.targets[0],
@@ -762,6 +782,18 @@ export class CommandCenter {
     } else {
       logger.info(fields, message);
     }
+=======
+    logger.info(
+      {
+        commandId: command.id,
+        botName: command.targets[0],
+        type: command.type,
+        status: command.status,
+        ...(durationMs !== undefined ? { durationMs } : {}),
+      },
+      message,
+    );
+>>>>>>> worktree-agent-ad58abab
   }
 
   private updateStatus(command: CommandRecord, status: CommandStatus): void {
@@ -803,6 +835,7 @@ export class CommandCenter {
 
   // ── Persistence ────────────────────────────────────────────
 
+<<<<<<< HEAD
   /** Schedule a debounced save (batches writes within DEBOUNCE_MS) */
   private persist(): void {
     this.saveDirty = true;
@@ -818,6 +851,9 @@ export class CommandCenter {
   /** Write to disk immediately (called on shutdown and cleanup) */
   private persistImmediate(): void {
     this.saveDirty = false;
+=======
+  private persist(): void {
+>>>>>>> worktree-agent-ad58abab
     try {
       // Keep only the most recent commands
       const all = [...this.commands.values()]
@@ -842,19 +878,26 @@ export class CommandCenter {
       const raw = fs.readFileSync(DATA_PATH, 'utf-8');
       const data = JSON.parse(raw) as { commands: CommandRecord[] };
 
+<<<<<<< HEAD
       if (!Array.isArray(data?.commands)) {
         logger.warn('Commands file is corrupt (missing commands array), starting fresh');
         return;
       }
 
+=======
+>>>>>>> worktree-agent-ad58abab
       for (const cmd of data.commands) {
         this.commands.set(cmd.id, cmd);
       }
 
       logger.info({ count: data.commands.length }, 'Loaded persisted commands');
     } catch (err) {
+<<<<<<< HEAD
       logger.warn({ err }, 'Failed to load persisted commands, starting fresh');
       this.commands.clear();
+=======
+      logger.error({ err }, 'Failed to load persisted commands');
+>>>>>>> worktree-agent-ad58abab
     }
   }
 }
