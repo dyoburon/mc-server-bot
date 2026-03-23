@@ -3,7 +3,8 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api, SchematicInfo, BuildJob, MissionRecord } from '@/lib/api';
-import { useBotStore } from '@/lib/store';
+import { useBotStore, useSchematicPlacementStore } from '@/lib/store';
+import { SchematicMiniMap } from '@/components/build/SchematicMiniMap';
 import { PageHeader } from '@/components/PageHeader';
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -496,6 +497,15 @@ export default function BuildPage() {
                         </div>
                       ))}
                     </div>
+                    {/* Footprint summary */}
+                    {selectedSchematic && (
+                      <p className="text-[10px] text-zinc-500 mt-1">
+                        Footprint: <span className="text-zinc-400">{selectedSchematic.size.x} x {selectedSchematic.size.z}</span> blocks,{' '}
+                        <span className="text-zinc-400">{selectedSchematic.size.y}</span> tall
+                        {' '}&mdash; from <span className="text-zinc-400 font-mono">({origin.x}, {origin.y}, {origin.z})</span>
+                        {' '}to <span className="text-zinc-400 font-mono">({origin.x + selectedSchematic.size.x}, {origin.y + selectedSchematic.size.y}, {origin.z + selectedSchematic.size.z})</span>
+                      </p>
+                    )}
                     {/* Use player/bot position */}
                     <div className="flex flex-wrap gap-1.5 mt-1.5">
                       {playerList.filter((p) => p.isOnline && p.position).map((player) => (
@@ -526,6 +536,10 @@ export default function BuildPage() {
                         </button>
                       ))}
                     </div>
+                    {/* Pick on Map mini-map */}
+                    {selectedSchematic && (
+                      <MiniMapSection schematic={selectedSchematic} origin={origin} setOrigin={setOrigin} />
+                    )}
                   </div>
 
                   {/* Bot Selector -- Tabbed */}
@@ -739,6 +753,59 @@ export default function BuildPage() {
           </AnimatePresence>
         </>
       )}
+    </div>
+  );
+}
+
+function MiniMapSection({ schematic, origin, setOrigin }: { schematic: SchematicInfo; origin: { x: number; y: number; z: number }; setOrigin: (o: { x: number; y: number; z: number }) => void }) {
+  const [showMap, setShowMap] = useState(false);
+
+  return (
+    <div className="mt-2">
+      <button
+        onClick={() => {
+          setShowMap((v) => !v);
+          if (!showMap) {
+            useSchematicPlacementStore.getState().startPlacement({
+              filename: schematic.filename,
+              sizeX: schematic.size.x,
+              sizeZ: schematic.size.z,
+              sizeY: schematic.size.y,
+            });
+          } else {
+            useSchematicPlacementStore.getState().cancelPlacement();
+          }
+        }}
+        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all border ${
+          showMap
+            ? 'bg-blue-500/15 border-blue-500/40 text-blue-300'
+            : 'bg-zinc-800/60 border-zinc-700/40 text-zinc-400 hover:text-blue-300 hover:border-blue-500/40'
+        }`}
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4z" />
+          <path d="M8 2v16" />
+          <path d="M16 6v16" />
+        </svg>
+        {showMap ? 'Hide Map' : 'Pick on Map'}
+      </button>
+      <AnimatePresence>
+        {showMap && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden mt-2"
+          >
+            <SchematicMiniMap
+              schematic={schematic}
+              origin={origin}
+              onOriginChange={(o) => setOrigin(o)}
+              height={300}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

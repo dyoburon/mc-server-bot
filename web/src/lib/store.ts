@@ -352,3 +352,25 @@ export const useRoleStore = create<RoleStore>((set) => ({
   removeAssignment: (id) =>
     set((s) => ({ assignments: removeById(s.assignments, id) })),
 }));
+
+/* ─── Schematic Placement Store ─── */
+
+interface SchematicPlacementStore {
+  activeSchematic: { filename: string; sizeX: number; sizeZ: number; sizeY: number } | null;
+  placedOrigin: { x: number; y: number; z: number } | null;
+  cursorWorldPos: { x: number; z: number } | null;
+  startPlacement: (schematic: { filename: string; sizeX: number; sizeZ: number; sizeY: number }) => void;
+  setPlacedOrigin: (origin: { x: number; y: number; z: number }) => void;
+  setCursorWorldPos: (pos: { x: number; z: number } | null) => void;
+  cancelPlacement: () => void;
+}
+
+export const useSchematicPlacementStore = create<SchematicPlacementStore>((set) => ({
+  activeSchematic: null,
+  placedOrigin: null,
+  cursorWorldPos: null,
+  startPlacement: (schematic) => set({ activeSchematic: schematic, placedOrigin: null, cursorWorldPos: null }),
+  setPlacedOrigin: (origin) => set({ placedOrigin: origin }),
+  setCursorWorldPos: (pos) => set({ cursorWorldPos: pos }),
+  cancelPlacement: () => set({ activeSchematic: null, placedOrigin: null, cursorWorldPos: null }),
+}));

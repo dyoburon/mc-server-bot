@@ -1,13 +1,14 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { useBotStore, useWorldStore } from '@/lib/store';
+import { useBotStore, useWorldStore, useSchematicPlacementStore } from '@/lib/store';
 import { api } from '@/lib/api';
 import type { MarkerRecord, MarkerKind, ZoneRecord, RouteRecord } from '@/lib/api';
 import { getPersonalityColor, PLAYER_COLOR, STATE_COLORS } from '@/lib/constants';
 import { getBlockColor } from '@/lib/blockColors';
 import MapContextMenu, { type ContextTarget } from '@/components/map/MapContextMenu';
 import MarkerEditor from '@/components/map/MarkerEditor';
+import { drawSchematicFootprint } from '@/components/map/mapDrawing';
 
 const MIN_SCALE = 0.5;
 const MAX_SCALE = 10;
@@ -513,6 +514,29 @@ export default function MapPage() {
             ctx.fillText(`${Math.round(marker.position.x)}, ${Math.round(marker.position.z)}`, sx, sy + size + 12);
           }
           ctx.restore();
+        }
+      }
+
+      // Schematic placement footprint
+      const placement = useSchematicPlacementStore.getState();
+      if (placement.activeSchematic) {
+        const sch = placement.activeSchematic;
+        if (placement.placedOrigin) {
+          drawSchematicFootprint(ctx, cx, cy, scale, offset, { x: placement.placedOrigin.x, z: placement.placedOrigin.z }, sch.sizeX, sch.sizeZ, 'placed');
+        }
+        if (placement.cursorWorldPos) {
+          const snapped = { x: Math.floor(placement.cursorWorldPos.x), z: Math.floor(placement.cursorWorldPos.z) };
+          drawSchematicFootprint(ctx, cx, cy, scale, offset, snapped, sch.sizeX, sch.sizeZ, 'preview');
+        }
+      }
+
+      // Active build footprint
+      const activeBuild = useBotStore.getState().activeBuild;
+      if (activeBuild?.origin) {
+        // Approximate footprint from schematic filename if dimensions available
+        const bp = placement.activeSchematic;
+        if (bp) {
+          drawSchematicFootprint(ctx, cx, cy, scale, offset, { x: activeBuild.origin.x, z: activeBuild.origin.z }, bp.sizeX, bp.sizeZ, 'active');
         }
       }
 
