@@ -387,6 +387,51 @@ export function createAPIServer(botManager: BotManager): APIServerResult {
     res.json({ events });
   });
 
+  // Online players with positions
+  app.get('/api/players', (_req: Request, res: Response) => {
+    const bots = botManager.getAllBots();
+    const connectedBot = bots.find((b) => b.bot);
+    if (!connectedBot?.bot) {
+      res.json({ players: [] });
+      return;
+    }
+    const players = Object.values(connectedBot.bot.players)
+      .filter((p: any) => p.username && p.entity)
+      .map((p: any) => ({
+        name: p.username,
+        position: p.entity ? { x: Math.floor(p.entity.position.x), y: Math.floor(p.entity.position.y), z: Math.floor(p.entity.position.z) } : null,
+        isOnline: true,
+      }));
+    res.json({ players });
+  });
+
+  // Social Memory
+  app.get('/api/bots/:name/memories', (req: Request, res: Response) => {
+    const name = req.params.name as string;
+    const memories = botManager.getSocialMemory().getRecentMemories(name, 20);
+    const reflections = botManager.getSocialMemory().getReflections(name, 5);
+    const emotional = botManager.getSocialMemory().getEmotionalState(name);
+    res.json({ memories, reflections, emotionalState: emotional });
+  });
+
+  // Bot Communications
+  app.get('/api/bots/:name/messages', (req: Request, res: Response) => {
+    const name = req.params.name as string;
+    const messages = botManager.getBotComms().getRecentMessages(name, 20);
+    res.json({ messages });
+  });
+
+  // Send a message between bots (from dashboard)
+  app.post('/api/bots/:name/bot-message', (req: Request, res: Response) => {
+    const { to, content } = req.body;
+    if (!to || !content) {
+      res.status(400).json({ error: 'to and content required' });
+      return;
+    }
+    const msg = botManager.getBotComms().sendMessage(req.params.name as string, to, content, 'chat');
+    res.json({ success: true, message: msg });
+  });
+
   // Send chat message to a bot (from dashboard)
   app.post('/api/bots/:name/chat', (req: Request, res: Response) => {
     const { playerName, message } = req.body;
