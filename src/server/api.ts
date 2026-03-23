@@ -893,6 +893,133 @@ export function createAPIServer(botManager: BotManager): APIServerResult {
   });
 
   // ═══════════════════════════════════════
+  //  BUILD & SCHEMATIC ENDPOINTS
+  // ═══════════════════════════════════════
+
+  app.get('/api/schematics', async (_req: Request, res: Response) => {
+    try {
+      const schematics = await buildCoordinator.listSchematics();
+      res.json({ schematics });
+    } catch (err: any) {
+      logger.error({ err }, 'Failed to list schematics');
+      res.status(500).json({ error: 'Failed to list schematics' });
+    }
+  });
+
+  app.get('/api/schematics/:filename', async (req: Request, res: Response) => {
+    try {
+      const info = await buildCoordinator.getSchematicInfoAsync(req.params.filename as string);
+      if (!info) { res.status(404).json({ error: 'Schematic not found' }); return; }
+      res.json({ schematic: info });
+    } catch (err: any) {
+      logger.error({ err, filename: req.params.filename }, 'Failed to get schematic info');
+      res.status(500).json({ error: 'Failed to get schematic info' });
+    }
+  });
+
+  app.post('/api/builds', async (req: Request, res: Response) => {
+    const { schematicFile, origin, botNames } = req.body;
+    if (!schematicFile || !origin || !botNames || !Array.isArray(botNames) || botNames.length === 0) {
+      res.status(400).json({ error: 'schematicFile, origin {x,y,z}, and botNames[] are required' }); return;
+    }
+    if (typeof origin.x !== 'number' || typeof origin.y !== 'number' || typeof origin.z !== 'number') {
+      res.status(400).json({ error: 'origin must have numeric x, y, z fields' }); return;
+    }
+    try {
+      const build = await buildCoordinator.startBuild(schematicFile, origin, botNames);
+      res.status(201).json({ success: true, build });
+    } catch (err: any) {
+      logger.error({ err }, 'Failed to start build');
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/builds', (_req: Request, res: Response) => {
+    const jobs = buildCoordinator.getAllBuildJobs();
+    res.json({ builds: jobs });
+  });
+
+  app.get('/api/builds/:id', (req: Request, res: Response) => {
+    const job = buildCoordinator.getBuildJob(req.params.id as string);
+    if (!job) { res.status(404).json({ error: 'Build job not found' }); return; }
+    res.json({ build: job });
+  });
+
+  app.post('/api/builds/:id/cancel', (req: Request, res: Response) => {
+    const success = buildCoordinator.cancelBuild(req.params.id as string);
+    if (!success) { res.status(404).json({ error: 'Build not found or already finished' }); return; }
+    res.json({ success: true });
+  });
+
+  app.post('/api/builds/:id/pause', (req: Request, res: Response) => {
+    const success = buildCoordinator.pauseBuild(req.params.id as string);
+    if (!success) { res.status(404).json({ error: 'Build not found or not running' }); return; }
+    res.json({ success: true });
+  });
+
+  app.post('/api/builds/:id/resume', (req: Request, res: Response) => {
+    const success = buildCoordinator.resumeBuild(req.params.id as string);
+    if (!success) { res.status(404).json({ error: 'Build not found or not paused' }); return; }
+    res.json({ success: true });
+  });
+
+  // ═══════════════════════════════════════
+  //  SUPPLY CHAIN ENDPOINTS
+  // ═══════════════════════════════════════
+
+  app.get('/api/chain-templates', (_req: Request, res: Response) => {
+    const templates = chainCoordinator.getTemplates();
+    res.json({ templates });
+  });
+
+  app.get('/api/chains', (_req: Request, res: Response) => {
+    const chains = chainCoordinator.getAllChains();
+    res.json({ chains });
+  });
+
+  app.get('/api/chains/:id', (req: Request, res: Response) => {
+    const chain = chainCoordinator.getChain(req.params.id as string);
+    if (!chain) { res.status(404).json({ error: 'Supply chain not found' }); return; }
+    res.json({ chain });
+  });
+
+  app.post('/api/chains', (req: Request, res: Response) => {
+    const { name, description, templateId, stages, loop, botAssignments, chestLocations } = req.body;
+    if (!name) { res.status(400).json({ error: 'name is required' }); return; }
+    try {
+      const chain = chainCoordinator.createChain({ name, description, templateId, stages, loop, botAssignments, chestLocations });
+      res.status(201).json({ chain });
+    } catch (err: any) {
+      logger.error({ err }, 'Failed to create supply chain');
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/chains/:id', (req: Request, res: Response) => {
+    const success = chainCoordinator.deleteChain(req.params.id as string);
+    if (!success) { res.status(404).json({ error: 'Supply chain not found' }); return; }
+    res.json({ success: true });
+  });
+
+  app.post('/api/chains/:id/start', (req: Request, res: Response) => {
+    const success = chainCoordinator.startChain(req.params.id as string);
+    if (!success) { res.status(404).json({ error: 'Supply chain not found or already running' }); return; }
+    res.json({ success: true });
+  });
+
+  app.post('/api/chains/:id/pause', (req: Request, res: Response) => {
+    const success = chainCoordinator.pauseChain(req.params.id as string);
+    if (!success) { res.status(404).json({ error: 'Supply chain not found or not running' }); return; }
+    res.json({ success: true });
+  });
+
+  app.post('/api/chains/:id/cancel', (req: Request, res: Response) => {
+    const success = chainCoordinator.cancelChain(req.params.id as string);
+    if (!success) { res.status(404).json({ error: 'Supply chain not found' }); return; }
+    res.json({ success: true });
+  });
+
+  // ═══════════════════════════════════════
   //  CONTROL PLATFORM - COMMANDER ENDPOINTS
   // ═══════════════════════════════════════
 
