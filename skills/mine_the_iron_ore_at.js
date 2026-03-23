@@ -1,9 +1,9 @@
-async function mineThreeIronOreAtLocation(bot) {
-  const targetX = 811;
-  const targetY = 58;
-  const targetZ = 244;
+async function mineIronOreAtTarget(bot) {
+  const targetX = 810;
+  const targetY = 42;
+  const targetZ = 237;
 
-  // Move close to the specified iron ore location
+  // Move to the specified iron ore location
   await moveTo(targetX, targetY, targetZ, 3, 60);
 
   // Helper function to find iron ore or deepslate iron ore nearby
@@ -15,11 +15,11 @@ async function mineThreeIronOreAtLocation(bot) {
 
   // If the block is not immediately visible, explore the area to find it
   if (!targetBlock) {
-    targetBlock = await exploreUntil('south', 30, () => findIron());
+    targetBlock = await exploreUntil('north', 30, () => findIron());
   }
 
-  // If we found iron ore, mine 3 of them
+  // If we found iron ore, mine it
   if (targetBlock) {
-    await mineBlock(targetBlock.name, 3);
+    await mineBlock(targetBlock.name, 1);
   }
 }

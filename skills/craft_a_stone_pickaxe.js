@@ -1,48 +1,50 @@
-async function craftStonePickaxeTask(bot) {
-  let tableBlock = bot.findBlock({
+async function craftStonePickaxe(bot) {
+  const existingPickaxe = bot.inventory.items().find(i => i.name === 'stone_pickaxe');
+  if (existingPickaxe) {
+    // If the task objective is just to have one, we could return here.
+    // However, to ensure the task "Craft a stone pickaxe" is completed as requested:
+  }
+  const cobblestone = bot.inventory.items().find(i => i.name === 'cobblestone');
+  const sticks = bot.inventory.items().find(i => i.name === 'stick');
+  if (!cobblestone || cobblestone.count < 3) {
+    await mineBlock('stone', 3);
+  }
+  if (!sticks || sticks.count < 2) {
+    const planks = bot.inventory.items().find(i => i.name.endsWith('_planks'));
+    if (!planks || planks.count < 1) {
+      const logs = bot.inventory.items().find(i => i.name.endsWith('_log'));
+      if (!logs) {
+        await mineBlock('oak_log', 1);
+      }
+      const logToUse = bot.inventory.items().find(i => i.name.endsWith('_log'));
+      await craftItem(logToUse.name.replace('_log', '_planks'), 1);
+    }
+    await craftItem('stick', 1);
+  }
+  let craftingTable = bot.findBlock({
     matching: b => b.name === 'crafting_table',
     maxDistance: 32
   });
-  if (!tableBlock) {
-    let tableItem = bot.inventory.items().find(i => i.name === 'crafting_table');
-    if (!tableItem) {
-      let planks = bot.inventory.items().find(i => i.name.endsWith('_planks'));
-      if (!planks || planks.count < 4) {
-        let logs = bot.inventory.items().find(i => i.name.endsWith('_log'));
-        if (logs) {
-          await craftItem(logs.name.replace('_log', '_planks'), 1);
-        } else {
-          await mineBlock('oak_log', 1);
-          await craftItem('oak_planks', 1);
-        }
-      }
+  if (!craftingTable) {
+    const tableInInv = bot.inventory.items().find(i => i.name === 'crafting_table');
+    if (tableInInv) {
+      const pos = bot.entity.position.floored().offset(1, 0, 1);
+      await placeItem('crafting_table', pos.x, pos.y, pos.z);
+      craftingTable = bot.findBlock({
+        matching: b => b.name === 'crafting_table',
+        maxDistance: 32
+      });
+    } else {
+      // Should not happen based on inventory, but for safety:
       await craftItem('crafting_table', 1);
-    }
-    const referenceBlock = bot.findBlock({
-      matching: b => b.name !== 'air' && b.name !== 'water' && b.name !== 'lava' && b.boundingBox === 'block',
-      maxDistance: 4
-    });
-    const pos = referenceBlock ? referenceBlock.position.offset(0, 1, 0) : bot.entity.position.offset(1, 0, 0).floored();
-    await placeItem('crafting_table', pos.x, pos.y, pos.z);
-    tableBlock = bot.findBlock({
-      matching: b => b.name === 'crafting_table',
-      maxDistance: 32
-    });
-  }
-  if (tableBlock) {
-    const dist = bot.entity.position.distanceTo(tableBlock.position);
-    if (dist > 3) {
-      await moveTo(tableBlock.position.x, tableBlock.position.y, tableBlock.position.z, 2, 10);
+      const pos = bot.entity.position.floored().offset(1, 0, 1);
+      await placeItem('crafting_table', pos.x, pos.y, pos.z);
+      craftingTable = bot.findBlock({
+        matching: b => b.name === 'crafting_table',
+        maxDistance: 32
+      });
     }
   }
-  let sticks = bot.inventory.items().find(i => i.name === 'stick');
-  if (!sticks || sticks.count < 2) {
-    await craftItem('stick', 1);
-  }
-  let cobblestone = bot.inventory.items().find(i => i.name === 'cobblestone');
-  let cobbleCount = cobblestone ? cobblestone.count : 0;
-  if (cobbleCount < 3) {
-    await mineBlock('stone', 3 - cobbleCount);
-  }
+  await moveTo(craftingTable.position.x, craftingTable.position.y, craftingTable.position.z, 3, 10);
   await craftItem('stone_pickaxe', 1);
 }

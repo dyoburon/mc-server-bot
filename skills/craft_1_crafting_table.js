@@ -1,22 +1,16 @@
-async function craftCraftingTable(bot) {
-  const tableItem = bot.inventory.items().find(i => i.name === 'crafting_table');
-  if (tableItem && tableItem.count >= 1) {
+async function craftOneCraftingTable(bot) {
+  const craftingTable = bot.inventory.items().find(i => i.name === 'crafting_table');
+  if (craftingTable) {
     return;
   }
-  const planksItem = bot.inventory.items().find(i => i.name.endsWith('_planks'));
-  let planksCount = planksItem ? planksItem.count : 0;
-  if (planksCount < 4) {
-    const logItem = bot.inventory.items().find(i => i.name.endsWith('_log'));
-    if (!logItem) {
-      await mineBlock('oak_log', 1);
+  let sprucePlanks = bot.inventory.items().find(i => i.name === 'spruce_planks');
+  let plankCount = sprucePlanks ? sprucePlanks.count : 0;
+  if (plankCount < 4) {
+    const spruceLog = bot.inventory.items().find(i => i.name === 'spruce_log');
+    if (!spruceLog) {
+      await mineBlock('spruce_log', 1);
     }
-    const logName = bot.inventory.items().find(i => i.name.endsWith('_log')).name;
-    const plankName = logName.replace('_log', '_planks');
-    await craftItem(plankName, 4);
+    await craftItem('spruce_planks', 4);
   }
   await craftItem('crafting_table', 1);
-  const finalTable = bot.inventory.items().find(i => i.name === 'crafting_table');
-  if (!finalTable) {
-    throw new Error('Crafting table was not found in inventory after crafting attempt.');
-  }
 }

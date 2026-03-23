@@ -1,17 +1,21 @@
-async function findWaterSource(bot) {
-  try {
-    bot.chat("Looking for water...");
-    const water = bot.findBlock({
-      matching: (block) => block.name === "water",
-      maxDistance: 32,
+async function findAWaterSource(bot) {
+  let water = bot.findBlock({
+    matching: b => b.name === 'water',
+    maxDistance: 32
+  });
+  if (!water) {
+    water = await exploreUntil({
+      x: 0,
+      y: 0,
+      z: -1
+    }, 60, () => {
+      return bot.findBlock({
+        matching: b => b.name === 'water',
+        maxDistance: 32
+      });
     });
-
-    if (water) {
-      bot.chat(`Found water at ${water.position.x}, ${water.position.y}, ${water.position.z}`);
-    } else {
-      bot.chat("Could not find water nearby.");
-    }
-  } catch (err) {
-    bot.chat(`Error finding water: ${err}`);
+  }
+  if (water) {
+    await moveTo(water.position.x, water.position.y, water.position.z, 3, 60);
   }
 }

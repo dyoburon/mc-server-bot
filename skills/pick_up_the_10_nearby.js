@@ -1,6 +1,6 @@
 async function pickUpTenNearbyItems(bot) {
   for (let i = 0; i < 10; i++) {
-    const itemEntity = bot.nearestEntity(entity => entity.name === 'item' || entity.type === 'item');
+    const itemEntity = bot.nearestEntity(entity => entity.name === 'item');
     if (!itemEntity) {
       break;
     }

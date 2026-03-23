@@ -1,25 +1,13 @@
-async function mineThreeSpruceLogsTask(bot) {
+async function mineThreeSpruceLogs(bot) {
   const targetName = 'spruce_log';
   const targetCount = 3;
-  const getCount = () => {
-    const item = bot.inventory.items().find(i => i.name === targetName);
-    return item ? item.count : 0;
-  };
-  const initialCount = getCount();
-  let spruceLog = bot.findBlock({
+  const findSpruce = () => bot.findBlock({
     matching: b => b.name === targetName,
     maxDistance: 32
   });
+  let spruceLog = findSpruce();
   if (!spruceLog) {
-    await exploreUntil('north', 60, () => bot.findBlock({
-      matching: b => b.name === targetName,
-      maxDistance: 32
-    }));
+    await exploreUntil('north', 60, () => findSpruce());
   }
   await mineBlock(targetName, targetCount);
-  const finalCount = getCount();
-  if (finalCount < initialCount + targetCount) {
-    const remaining = initialCount + targetCount - finalCount;
-    await mineBlock(targetName, remaining);
-  }
 }

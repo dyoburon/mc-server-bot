@@ -181,13 +181,17 @@
     "file": "mine_3_blocks_of_grass.js"
   },
   {
-    "quality": 0.9,
-    "successCount": 2,
-    "failureCount": 0,
     "name": "mine_1_oak_log",
     "description": "mine 1 oak log",
-    "keywords": [],
-    "file": "mine_1_oak_log.js"
+    "keywords": [
+      "wood",
+      "mining",
+      "basic"
+    ],
+    "file": "mine_1_oak_log.js",
+    "quality": 0.9,
+    "successCount": 3,
+    "failureCount": 0
   },
   {
     "quality": 0.7,
@@ -203,17 +207,13 @@
     "file": "walk_to_the_nearest_player.js"
   },
   {
-    "quality": 0.7,
-    "successCount": 0,
-    "failureCount": 0,
     "name": "find_a_water_source",
     "description": "find a water source",
-    "keywords": [
-      "find",
-      "water",
-      "source"
-    ],
-    "file": "find_a_water_source.js"
+    "keywords": [],
+    "file": "find_a_water_source.js",
+    "quality": 0.8,
+    "successCount": 1,
+    "failureCount": 0
   },
   {
     "quality": 0.7,
@@ -323,17 +323,16 @@
   {
     "name": "mine_3_oak_logs",
     "description": "Mine 3 oak logs",
-    "keywords": [
-      "mine",
-      "oak_log",
-      "wood"
-    ],
+    "keywords": [],
     "file": "mine_3_oak_logs.js",
-    "quality": 0.9,
-    "successCount": 8,
+    "quality": 0.8,
+    "successCount": 9,
     "failureCount": 0
   },
   {
+    "quality": 0.9,
+    "successCount": 11,
+    "failureCount": 0,
     "name": "craft_a_wooden_pickaxe",
     "description": "Craft a wooden pickaxe",
     "keywords": [
@@ -341,10 +340,7 @@
       "pickaxe",
       "wood"
     ],
-    "file": "craft_a_wooden_pickaxe.js",
-    "quality": 0.8,
-    "successCount": 9,
-    "failureCount": 0
+    "file": "craft_a_wooden_pickaxe.js"
   },
   {
     "quality": 0.7,
@@ -449,15 +445,11 @@
   },
   {
     "quality": 0.8,
-    "successCount": 5,
+    "successCount": 6,
     "failureCount": 0,
     "name": "mine_3_iron_ore_at",
-    "description": "Mine 3 iron ore at 905, 63, 258",
-    "keywords": [
-      "iron",
-      "mining",
-      "resources"
-    ],
+    "description": "Mine 3 iron ore at 821,",
+    "keywords": [],
     "file": "mine_3_iron_ore_at.js"
   },
   {
@@ -488,14 +480,14 @@
   },
   {
     "quality": 0.8,
-    "successCount": 11,
+    "successCount": 13,
     "failureCount": 0,
     "name": "mine_3_spruce_logs",
     "description": "Mine 3 spruce logs",
     "keywords": [
       "mine",
       "spruce_log",
-      "builder"
+      "wood"
     ],
     "file": "mine_3_spruce_logs.js"
   },
@@ -510,13 +502,14 @@
   },
   {
     "quality": 0.9,
-    "successCount": 6,
+    "successCount": 8,
     "failureCount": 0,
     "name": "mine_3_oak_logs_at",
-    "description": "Mine 3 oak logs at 859, 77, 217",
+    "description": "Mine 3 oak logs at 717, 79, 245",
     "keywords": [
       "mine",
-      "oak_log"
+      "oak_log",
+      "wood"
     ],
     "file": "mine_3_oak_logs_at.js"
   },
@@ -592,21 +585,25 @@
     "file": "craft_4_oak_planks_from.js"
   },
   {
+    "quality": 0.9,
+    "successCount": 4,
+    "failureCount": 0,
     "name": "craft_4_sticks_using_2",
     "description": "Craft 4 sticks using 2 spruce planks",
     "keywords": [],
-    "file": "craft_4_sticks_using_2.js",
-    "quality": 0.9,
-    "successCount": 4,
-    "failureCount": 0
+    "file": "craft_4_sticks_using_2.js"
   },
   {
     "quality": 0.8,
-    "successCount": 1,
+    "successCount": 2,
     "failureCount": 0,
     "name": "mine_3_stone_blocks",
     "description": "Mine 3 stone blocks",
-    "keywords": [],
+    "keywords": [
+      "stone",
+      "mine",
+      "cobblestone"
+    ],
     "file": "mine_3_stone_blocks.js"
   },
   {
@@ -632,16 +629,94 @@
     "file": "collect_the_wooden_pickaxe_and.js"
   },
   {
-    "quality": 0.8,
-    "successCount": 1,
+    "quality": 0.9,
+    "successCount": 2,
     "failureCount": 0,
     "name": "mine_3_stone_blocks_to",
-    "description": "Mine 3 stone blocks to upgrade to a stone pickaxe",
+    "description": "Mine 3 stone blocks to collect cobblestone",
     "keywords": [
       "mine",
       "stone",
-      "upgrade"
+      "cobblestone"
     ],
     "file": "mine_3_stone_blocks_to.js"
+  },
+  {
+    "quality": 0.9,
+    "successCount": 1,
+    "failureCount": 0,
+    "name": "craft_4_spruce_planks_from",
+    "description": "Craft 4 spruce planks from 1 spruce log",
+    "keywords": [
+      "spruce_planks",
+      "craft"
+    ],
+    "file": "craft_4_spruce_planks_from.js"
+  },
+  {
+    "quality": 0.8,
+    "successCount": 1,
+    "failureCount": 0,
+    "name": "mine_3_stone_blocks_with",
+    "description": "Mine 3 stone blocks with the wooden pickaxe",
+    "keywords": [
+      "mine",
+      "stone",
+      "cobblestone"
+    ],
+    "file": "mine_3_stone_blocks_with.js"
+  },
+  {
+    "quality": 0.9,
+    "successCount": 4,
+    "failureCount": 0,
+    "name": "craft_1_stone_pickaxe_using",
+    "description": "Craft 1 stone pickaxe using 3 cobblestone",
+    "keywords": [],
+    "file": "craft_1_stone_pickaxe_using.js"
+  },
+  {
+    "quality": 0.9,
+    "successCount": 1,
+    "failureCount": 0,
+    "name": "craft_1_furnace_using_8",
+    "description": "Craft 1 furnace using 8 cobblestone",
+    "keywords": [],
+    "file": "craft_1_furnace_using_8.js"
+  },
+  {
+    "quality": 0.9,
+    "successCount": 1,
+    "failureCount": 0,
+    "name": "craft_4_sticks_using_spruce",
+    "description": "Craft 4 sticks using spruce planks",
+    "keywords": [],
+    "file": "craft_4_sticks_using_spruce.js"
+  },
+  {
+    "quality": 0.9,
+    "successCount": 1,
+    "failureCount": 0,
+    "name": "craft_a_stone_pickaxe",
+    "description": "Craft a stone pickaxe",
+    "keywords": [
+      "craft",
+      "stone_pickaxe",
+      "tool"
+    ],
+    "file": "craft_a_stone_pickaxe.js"
+  },
+  {
+    "quality": 0.8,
+    "successCount": 1,
+    "failureCount": 0,
+    "name": "mine_1_oak_log_at",
+    "description": "Mine 1 oak log at 847, 68, 199",
+    "keywords": [
+      "wood",
+      "crafting",
+      "upgrade"
+    ],
+    "file": "mine_1_oak_log_at.js"
   }
 ]

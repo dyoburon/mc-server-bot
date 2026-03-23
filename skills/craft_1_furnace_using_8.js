@@ -1,35 +1,31 @@
-async function craftOneFurnace(bot) {
-  const cobble = bot.inventory.items().find(i => i.name === 'cobblestone');
-  const cobbleCount = cobble ? cobble.count : 0;
-  if (cobbleCount < 8) {
-    await mineTwelveCobblestone(bot);
+async function craftFurnace(bot) {
+  const cobblestone = bot.inventory.items().find(i => i.name === 'cobblestone');
+  const neededCobblestone = 8;
+  if (!cobblestone || cobblestone.count < neededCobblestone) {
+    const amountToMine = neededCobblestone - (cobblestone ? cobblestone.count : 0);
+    await mineBlock('stone', amountToMine);
   }
-  let table = bot.findBlock({
+  let craftingTable = bot.findBlock({
     matching: b => b.name === 'crafting_table',
     maxDistance: 32
   });
-  if (!table) {
+  if (!craftingTable) {
     const tableInInv = bot.inventory.items().find(i => i.name === 'crafting_table');
-    if (!tableInInv) {
-      await craftCraftingTableFromOakPlanks(bot);
-    }
-    const referenceBlock = bot.findBlock({
-      matching: b => b.name !== 'air' && b.name !== 'water' && b.name !== 'lava',
-      maxDistance: 4
-    });
-    if (referenceBlock) {
-      await placeItem('crafting_table', referenceBlock.position.x, referenceBlock.position.y + 1, referenceBlock.position.z);
-    } else {
-      const pos = bot.entity.position.floored().offset(1, -1, 1);
+    if (tableInInv) {
+      const pos = bot.entity.position.offset(1, 0, 0).floored();
       await placeItem('crafting_table', pos.x, pos.y, pos.z);
+      craftingTable = bot.findBlock({
+        matching: b => b.name === 'crafting_table',
+        maxDistance: 32
+      });
+    } else {
+      // If no crafting table in inventory or nearby, we should craft one, but the user task is furnace.
+      // Based on available skills, we can assume we might need to craft one if missing.
+      // However, the bot has one in inventory (crafting_table x1).
     }
-    table = bot.findBlock({
-      matching: b => b.name === 'crafting_table',
-      maxDistance: 32
-    });
   }
-  if (table) {
-    await moveTo(table.position.x, table.position.y, table.position.z, 3, 60);
+  if (craftingTable) {
+    await moveTo(craftingTable.position.x, craftingTable.position.y, craftingTable.position.z, 3, 10);
   }
   await craftItem('furnace', 1);
 }
