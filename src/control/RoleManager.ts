@@ -6,10 +6,7 @@ import * as path from 'path';
 
 const VALID_ROLES: RoleType[] = ['guard', 'builder', 'hauler', 'farmer', 'miner', 'scout', 'merchant', 'free-agent'];
 const VALID_AUTONOMY: AutonomyLevel[] = ['manual', 'assisted', 'autonomous'];
-<<<<<<< HEAD
 const DEBOUNCE_MS = 1_000;
-=======
->>>>>>> worktree-agent-ad58abab
 
 export interface OverrideRecord {
   reason: string;
@@ -24,10 +21,7 @@ export class RoleManager {
   private overrides: Map<string, OverrideRecord> = new Map();
   private readonly filePath: string;
   private readonly io: SocketIOServer;
-<<<<<<< HEAD
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
-=======
->>>>>>> worktree-agent-ad58abab
 
   constructor(io: SocketIOServer) {
     this.io = io;
@@ -82,7 +76,6 @@ export class RoleManager {
 
   private load(): void {
     try {
-<<<<<<< HEAD
       if (!fs.existsSync(this.filePath)) return;
 
       const raw = fs.readFileSync(this.filePath, 'utf-8');
@@ -96,20 +89,12 @@ export class RoleManager {
 
       this.assignments = parsed;
       logger.info({ count: this.assignments.length }, 'RoleManager: loaded assignments');
-=======
-      if (fs.existsSync(this.filePath)) {
-        const raw = fs.readFileSync(this.filePath, 'utf-8');
-        this.assignments = JSON.parse(raw);
-        logger.info({ count: this.assignments.length }, 'RoleManager: loaded assignments');
-      }
->>>>>>> worktree-agent-ad58abab
     } catch (err) {
       logger.warn({ err }, 'RoleManager: failed to load roles.json, starting empty');
       this.assignments = [];
     }
   }
 
-<<<<<<< HEAD
   /** Schedule a debounced save */
   private save(): void {
     if (this.saveTimer) return;
@@ -122,9 +107,6 @@ export class RoleManager {
   /** Write to disk immediately */
   private saveImmediate(): void {
     if (this.saveTimer) { clearTimeout(this.saveTimer); this.saveTimer = null; }
-=======
-  private save(): void {
->>>>>>> worktree-agent-ad58abab
     try {
       const dir = path.dirname(this.filePath);
       if (!fs.existsSync(dir)) {
@@ -136,14 +118,11 @@ export class RoleManager {
     }
   }
 
-<<<<<<< HEAD
   /** Flush pending saves and clear timers */
   shutdown(): void {
     this.saveImmediate();
   }
 
-=======
->>>>>>> worktree-agent-ad58abab
   private generateId(): string {
     return `role_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   }
@@ -175,11 +154,7 @@ export class RoleManager {
     const existing = this.assignments.findIndex((a) => a.botName === data.botName);
     if (existing !== -1) {
       logger.warn(
-<<<<<<< HEAD
         { assignmentId: this.assignments[existing].id, botName: data.botName, role: this.assignments[existing].role, action: 'replace' },
-=======
-        { botName: data.botName, oldRole: this.assignments[existing].role, newRole: data.role },
->>>>>>> worktree-agent-ad58abab
         'RoleManager: replacing existing role assignment for bot',
       );
       this.assignments.splice(existing, 1);
@@ -198,11 +173,7 @@ export class RoleManager {
     this.assignments.push(record);
     this.save();
     this.emit();
-<<<<<<< HEAD
     logger.info({ assignmentId: record.id, botName: record.botName, role: record.role, action: 'create' }, 'RoleManager: assignment created');
-=======
-    logger.info({ id: record.id, botName: record.botName, role: record.role }, 'RoleManager: assignment created');
->>>>>>> worktree-agent-ad58abab
     return record;
   }
 
@@ -237,14 +208,10 @@ export class RoleManager {
 
     this.save();
     this.emit();
-<<<<<<< HEAD
     logger.info(
       { assignmentId: id, botName: this.assignments[idx].botName, role: this.assignments[idx].role, action: 'update' },
       'RoleManager: assignment updated',
     );
-=======
-    logger.info({ id, updates: Object.keys(updateFields) }, 'RoleManager: assignment updated');
->>>>>>> worktree-agent-ad58abab
     return this.assignments[idx];
   }
 
@@ -255,11 +222,7 @@ export class RoleManager {
     const removed = this.assignments.splice(idx, 1)[0];
     this.save();
     this.emit();
-<<<<<<< HEAD
     logger.info({ assignmentId: id, botName: removed.botName, role: removed.role, action: 'delete' }, 'RoleManager: assignment deleted');
-=======
-    logger.info({ id, botName: removed.botName }, 'RoleManager: assignment deleted');
->>>>>>> worktree-agent-ad58abab
     return true;
   }
 }

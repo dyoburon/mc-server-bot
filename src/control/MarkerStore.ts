@@ -7,7 +7,6 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 
 const DATA_DIR = path.join(process.cwd(), 'data');
-<<<<<<< HEAD
 const DEBOUNCE_MS = 1_000;
 
 function ensureDataDir(): void {
@@ -17,12 +16,6 @@ function ensureDataDir(): void {
     }
   } catch (err) {
     logger.error({ err }, 'Failed to create data directory');
-=======
-
-function ensureDataDir(): void {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
->>>>>>> worktree-agent-ad58abab
   }
 }
 
@@ -38,17 +31,12 @@ function loadJson<T>(filePath: string, fallback: T): T {
 }
 
 function saveJson(filePath: string, data: unknown): void {
-<<<<<<< HEAD
   try {
     ensureDataDir();
     fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
   } catch (err) {
     logger.error({ err, filePath }, 'Failed to save JSON file');
   }
-=======
-  ensureDataDir();
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
->>>>>>> worktree-agent-ad58abab
 }
 
 function genId(prefix: string): string {
@@ -64,13 +52,10 @@ export class MarkerStore {
   private zonesPath = path.join(DATA_DIR, 'zones.json');
   private routesPath = path.join(DATA_DIR, 'routes.json');
 
-<<<<<<< HEAD
   private markerSaveTimer: ReturnType<typeof setTimeout> | null = null;
   private zoneSaveTimer: ReturnType<typeof setTimeout> | null = null;
   private routeSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
-=======
->>>>>>> worktree-agent-ad58abab
   constructor(private io: SocketIOServer) {
     this.load();
     logger.info(
@@ -93,7 +78,6 @@ export class MarkerStore {
   }
 
   private saveMarkers(): void {
-<<<<<<< HEAD
     if (this.markerSaveTimer) return;
     this.markerSaveTimer = setTimeout(() => {
       this.markerSaveTimer = null;
@@ -103,13 +87,10 @@ export class MarkerStore {
 
   private saveMarkersImmediate(): void {
     if (this.markerSaveTimer) { clearTimeout(this.markerSaveTimer); this.markerSaveTimer = null; }
-=======
->>>>>>> worktree-agent-ad58abab
     saveJson(this.markersPath, Array.from(this.markers.values()));
   }
 
   private saveZones(): void {
-<<<<<<< HEAD
     if (this.zoneSaveTimer) return;
     this.zoneSaveTimer = setTimeout(() => {
       this.zoneSaveTimer = null;
@@ -119,13 +100,10 @@ export class MarkerStore {
 
   private saveZonesImmediate(): void {
     if (this.zoneSaveTimer) { clearTimeout(this.zoneSaveTimer); this.zoneSaveTimer = null; }
-=======
->>>>>>> worktree-agent-ad58abab
     saveJson(this.zonesPath, Array.from(this.zones.values()));
   }
 
   private saveRoutes(): void {
-<<<<<<< HEAD
     if (this.routeSaveTimer) return;
     this.routeSaveTimer = setTimeout(() => {
       this.routeSaveTimer = null;
@@ -145,11 +123,6 @@ export class MarkerStore {
     this.saveRoutesImmediate();
   }
 
-=======
-    saveJson(this.routesPath, Array.from(this.routes.values()));
-  }
-
->>>>>>> worktree-agent-ad58abab
   // ── Markers ──────────────────────────────────────────────
 
   createMarker(data: {
@@ -173,11 +146,7 @@ export class MarkerStore {
     this.markers.set(marker.id, marker);
     this.saveMarkers();
     this.io.emit(WORLD_EVENTS.MARKER_CREATED, marker);
-<<<<<<< HEAD
     logger.info({ markerId: marker.id, name: marker.name, kind: marker.kind }, 'Marker created');
-=======
-    logger.info({ markerId: marker.id, name: marker.name }, 'Marker created');
->>>>>>> worktree-agent-ad58abab
     return marker;
   }
 
@@ -196,28 +165,17 @@ export class MarkerStore {
     this.markers.set(id, updated);
     this.saveMarkers();
     this.io.emit(WORLD_EVENTS.MARKER_UPDATED, updated);
-<<<<<<< HEAD
     logger.info({ markerId: id, name: updated.name, kind: updated.kind }, 'Marker updated');
-=======
-    logger.info({ markerId: id }, 'Marker updated');
->>>>>>> worktree-agent-ad58abab
     return updated;
   }
 
   deleteMarker(id: string): boolean {
-<<<<<<< HEAD
     const marker = this.markers.get(id);
-=======
->>>>>>> worktree-agent-ad58abab
     const existed = this.markers.delete(id);
     if (existed) {
       this.saveMarkers();
       this.io.emit(WORLD_EVENTS.MARKER_UPDATED, { id, deleted: true });
-<<<<<<< HEAD
       logger.info({ markerId: id, name: marker?.name, kind: marker?.kind }, 'Marker deleted');
-=======
-      logger.info({ markerId: id }, 'Marker deleted');
->>>>>>> worktree-agent-ad58abab
     }
     return existed;
   }
