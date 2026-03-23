@@ -89,7 +89,7 @@ export class BuildCoordinator {
           logger.info({ filename, sizeBytes: stat.size }, 'Skipping large schematic metadata load');
           continue;
         }
-        const info = await this.getSchematicInfoAsync(filename);
+        const info = await this.getSchematicInfoSafe(filename);
         if (info) results.push(info);
       } catch (err: any) {
         logger.warn({ filename, err: err.message }, 'Failed to read schematic metadata');
@@ -99,39 +99,64 @@ export class BuildCoordinator {
     return results;
   }
 
-  async getSchematicInfoAsync(filename: string): Promise<SchematicInfo | null> {
+  /** Safe metadata loader — gets dimensions without holding the full schematic in memory */
+  private async getSchematicInfoSafe(filename: string): Promise<SchematicInfo | null> {
     const { Schematic } = require('prismarine-schematic');
     const fullPath = path.join(this.schematicsDir, filename);
-
     if (!fs.existsSync(fullPath)) return null;
 
-    const buffer = fs.readFileSync(fullPath);
-    const schematic = await Schematic.read(buffer, this.getBotVersion());
-    const size = schematic.size;
+    // Heuristic: compressed .schem files typically have ~100:1 to ~200:1 ratio.
+    // Files over 50KB compressed likely decompress to millions of voxels — skip parsing entirely.
+    const fileSize = fs.statSync(fullPath).size;
+    if (fileSize > 50_000) {
+      logger.info({ filename, fileSize }, 'Large schematic — estimating dimensions from file size');
+      // Rough estimate: compressed size * 150 gives approx total voxels, cube-root for dimensions
+      const estVoxels = fileSize * 150;
+      const estDim = Math.round(Math.cbrt(estVoxels));
+      return { filename, size: { x: estDim, y: Math.round(estDim * 0.6), z: estDim }, blockCount: Math.round(estVoxels * 0.15) };
+    }
 
-    // Skip full block counting for huge schematics to avoid OOM
+    let schematic: any;
+    try {
+      const buffer = fs.readFileSync(fullPath);
+      schematic = await Schematic.read(buffer, this.getBotVersion());
+    } catch (err: any) {
+      logger.warn({ filename, err: err.message }, 'Failed to parse schematic');
+      return { filename, size: { x: 0, y: 0, z: 0 }, blockCount: 0 };
+    }
+
+    const size = schematic.size;
     const volume = size.x * size.y * size.z;
-    if (volume > 500_000) {
-      // Estimate block count as ~15% of volume (typical for structures)
+
+    // For large schematics, estimate block count and skip iteration
+    if (volume > 200_000) {
+      schematic = null; // release memory
       return { filename, size: { x: size.x, y: size.y, z: size.z }, blockCount: Math.round(volume * 0.15) };
     }
 
+    // For smaller schematics, count actual blocks
     const start = schematic.start();
     const end = schematic.end();
-
     let blockCount = 0;
+    const tempPos = new Vec3(0, 0, 0);
     for (let y = start.y; y <= end.y; y++) {
       for (let z = start.z; z <= end.z; z++) {
         for (let x = start.x; x <= end.x; x++) {
-          const block = schematic.getBlock(new Vec3(x, y, z));
+          tempPos.x = x; tempPos.y = y; tempPos.z = z;
+          const block = schematic.getBlock(tempPos);
           if (block && block.name !== 'air' && block.name !== 'cave_air' && block.name !== 'void_air') {
             blockCount++;
           }
         }
       }
     }
+    schematic = null; // release memory
 
     return { filename, size: { x: size.x, y: size.y, z: size.z }, blockCount };
+  }
+
+  async getSchematicInfoAsync(filename: string): Promise<SchematicInfo | null> {
+    return this.getSchematicInfoSafe(filename);
   }
 
   // ── Build job management ────────────────────────────────
@@ -164,6 +189,13 @@ export class BuildCoordinator {
     // Load schematic
     const buffer = fs.readFileSync(fullPath);
     const schematic = await Schematic.read(buffer, this.getBotVersion());
+
+    // Check volume before iterating — reject if too large
+    const schSize = schematic.size;
+    const volume = schSize.x * schSize.y * schSize.z;
+    if (volume > 2_000_000) {
+      throw new Error(`Schematic volume too large (${schSize.x}x${schSize.y}x${schSize.z} = ${volume.toLocaleString()} voxels). Max 2M voxels.`);
+    }
 
     const ox = origin.x, oy = origin.y, oz = origin.z;
     const start = schematic.start();
