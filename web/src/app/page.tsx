@@ -160,7 +160,7 @@ export default function DashboardPage() {
 
   // --- Pending commands per bot ----------------------------------------------
   const pendingPerBot = (botName: string) =>
-    pendingCommands.filter((c) => c.targets.includes(botName)).length;
+    pendingCommands.filter((c) => c.targets?.includes(botName)).length;
 
   return (
     <div className="p-6 lg:p-8 space-y-8 max-w-[1400px]">
