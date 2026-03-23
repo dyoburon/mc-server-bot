@@ -133,6 +133,26 @@ export interface TerrainData {
   blocks: string[];
 }
 
+export interface RoleAssignmentRecord {
+  botName: string;
+  role: string;
+  autonomy: 'manual' | 'assisted' | 'autonomous';
+  homeMarker?: string;
+  allowedZones?: string[];
+  assignedAt: number;
+}
+
+export interface Marker {
+  name: string;
+  position: { x: number; y: number; z: number };
+}
+
+export interface Zone {
+  name: string;
+  from: { x: number; y: number; z: number };
+  to: { x: number; y: number; z: number };
+}
+
 // API functions
 export const api = {
   // Bots
@@ -174,6 +194,28 @@ export const api = {
     if (type) params.set('type', type);
     return fetchJSON<{ events: BotEvent[] }>(`/api/activity?${params}`);
   },
+
+  // Role assignments
+  getRoleAssignments: () =>
+    fetchJSON<{ assignments: RoleAssignmentRecord[] }>('/api/roles/assignments').catch(() => ({ assignments: [] })),
+  createRoleAssignment: (assignment: Omit<RoleAssignmentRecord, 'assignedAt'>) =>
+    fetchJSON<{ success: boolean; assignment: RoleAssignmentRecord }>('/api/roles/assignments', {
+      method: 'POST',
+      body: JSON.stringify(assignment),
+    }),
+  updateRoleAssignment: (botName: string, update: Partial<Omit<RoleAssignmentRecord, 'botName' | 'assignedAt'>>) =>
+    fetchJSON<{ success: boolean; assignment: RoleAssignmentRecord }>(`/api/roles/assignments/${botName}`, {
+      method: 'PUT',
+      body: JSON.stringify(update),
+    }),
+  deleteRoleAssignment: (botName: string) =>
+    fetchJSON<{ success: boolean }>(`/api/roles/assignments/${botName}`, { method: 'DELETE' }),
+
+  // Markers & Zones
+  getMarkers: () =>
+    fetchJSON<{ markers: Marker[] }>('/api/markers').catch(() => ({ markers: [] })),
+  getZones: () =>
+    fetchJSON<{ zones: Zone[] }>('/api/zones').catch(() => ({ zones: [] })),
 
   // Actions
   sendChat: (botName: string, playerName: string, message: string) =>
