@@ -4,6 +4,7 @@ import { Server as SocketIOServer } from 'socket.io';
 import { BotManager } from '../bot/BotManager';
 import { BuildCoordinator } from '../build/BuildCoordinator';
 import { ChainCoordinator } from '../supplychain/ChainCoordinator';
+import { CommandCenter } from './CommandCenter';
 import { logger } from '../util/logger';
 import {
   MissionRecord,
@@ -16,6 +17,7 @@ import {
 
 const DATA_DIR = './data';
 const MISSIONS_FILE = path.join(DATA_DIR, 'missions.json');
+const STALE_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
 
 export interface CreateMissionParams {
   type: MissionType;
@@ -43,6 +45,9 @@ export class MissionManager {
   private io: SocketIOServer;
   private buildCoordinator?: BuildCoordinator;
   private chainCoordinator?: ChainCoordinator;
+  private commandCenter?: CommandCenter;
+  /** Tracks which task description was queued for a running mission (missionId → description) */
+  private missionTaskDescriptions: Map<string, string> = new Map();
 
   constructor(botManager: BotManager, io: SocketIOServer) {
     this.botManager = botManager;
@@ -58,6 +63,10 @@ export class MissionManager {
 
   setChainCoordinator(cc: ChainCoordinator): void {
     this.chainCoordinator = cc;
+  }
+
+  setCommandCenter(cc: CommandCenter): void {
+    this.commandCenter = cc;
   }
 
   // ── ID generation ──────────────────────────────────
@@ -150,6 +159,8 @@ export class MissionManager {
     }
     if (newStatus === 'completed' || newStatus === 'failed' || newStatus === 'cancelled') {
       mission.completedAt = Date.now();
+      // Clean up task tracking when mission reaches terminal state
+      this.missionTaskDescriptions.delete(id);
     }
     if (metadata?.reason) {
       mission.blockedReason = metadata.reason;
@@ -232,6 +243,36 @@ export class MissionManager {
     return this.updateMissionStatus(id, 'queued');
   }
 
+  // ── Dependency check ───────────────────────────────
+
+  /**
+   * Check whether a mission's prerequisites are met.
+   * If the mission has linkedCommandIds, all linked commands must have succeeded.
+   */
+  canStart(mission: MissionRecord): boolean {
+    if (!mission.linkedCommandIds || mission.linkedCommandIds.length === 0) {
+      return true;
+    }
+
+    if (!this.commandCenter) {
+      // Without a CommandCenter we cannot verify dependencies; assume not ready
+      logger.warn(
+        { missionId: mission.id },
+        'Cannot check mission dependencies: CommandCenter not set'
+      );
+      return false;
+    }
+
+    for (const cmdId of mission.linkedCommandIds) {
+      const cmd = this.commandCenter.getCommand(cmdId);
+      if (!cmd || cmd.status !== 'succeeded') {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
   // ── Mission execution ────────────────────────────────
 
   async startMission(id: string): Promise<MissionRecord | undefined> {
@@ -242,7 +283,32 @@ export class MissionManager {
       return undefined;
     }
 
+    // Check dependencies before starting
+    if (!this.canStart(mission)) {
+      const pendingCmds = (mission.linkedCommandIds ?? []).filter((cmdId) => {
+        const cmd = this.commandCenter?.getCommand(cmdId);
+        return !cmd || cmd.status !== 'succeeded';
+      });
+      logger.info(
+        { missionId: id, pendingCommands: pendingCmds },
+        'Mission blocked: linked commands not yet succeeded'
+      );
+      // Update blockedReason but keep status as queued
+      mission.blockedReason = `Waiting on linked commands: ${pendingCmds.join(', ')}`;
+      mission.updatedAt = Date.now();
+      this.save();
+      this.io.emit(MISSION_EVENTS.UPDATED, mission);
+      return mission;
+    }
+
+    // Clear any previous blocked reason once dependencies are met
+    if (mission.blockedReason) {
+      mission.blockedReason = undefined;
+    }
+
     switch (mission.type) {
+      case 'queue_task':
+        return this.executeQueueTaskMission(mission);
       case 'build_schematic':
         return this.executeBuildMission(mission);
       case 'supply_chain':
@@ -250,6 +316,120 @@ export class MissionManager {
       default:
         // For other mission types, just transition to running
         return this.updateMissionStatus(id, 'running');
+    }
+  }
+
+  // ── VoyagerLoop bridge for queue_task missions ──────
+
+  private executeQueueTaskMission(mission: MissionRecord): MissionRecord | undefined {
+    const taskDescription = mission.description || mission.title;
+
+    for (const botName of mission.assigneeIds) {
+      const bot = this.botManager.getBot(botName);
+      if (!bot) {
+        logger.warn(
+          { missionId: mission.id, botName },
+          'Cannot queue task: bot not found'
+        );
+        continue;
+      }
+
+      const voyager = bot.getVoyagerLoop();
+      if (!voyager) {
+        logger.warn(
+          { missionId: mission.id, botName },
+          'Cannot queue task: bot has no VoyagerLoop'
+        );
+        continue;
+      }
+
+      voyager.queuePlayerTask(taskDescription, 'mission');
+      logger.info(
+        { missionId: mission.id, botName, task: taskDescription },
+        'Queued task to VoyagerLoop via mission'
+      );
+    }
+
+    // Track the task description so checkMissionProgress can match it
+    this.missionTaskDescriptions.set(mission.id, taskDescription);
+
+    return this.updateMissionStatus(mission.id, 'running');
+  }
+
+  // ── Mission progress checking ──────────────────────
+
+  /**
+   * Check progress of all running missions.
+   * For 'queue_task' missions, inspects the VoyagerLoop to detect task completion/failure.
+   * Also flags stale missions that have been running for over 30 minutes.
+   *
+   * Call this periodically (e.g. every 30s–60s).
+   */
+  checkMissionProgress(): void {
+    const now = Date.now();
+
+    for (const mission of this.missions.values()) {
+      if (mission.status !== 'running') continue;
+
+      // ── Stale mission detection ──
+      if (mission.startedAt && now - mission.startedAt > STALE_THRESHOLD_MS) {
+        if (mission.blockedReason !== 'Stale - running for over 30 minutes') {
+          mission.blockedReason = 'Stale - running for over 30 minutes';
+          mission.updatedAt = now;
+          this.save();
+          this.io.emit(MISSION_EVENTS.UPDATED, mission);
+          logger.warn(
+            { missionId: mission.id, runningSinceMs: now - mission.startedAt },
+            'Mission flagged as stale'
+          );
+        }
+      }
+
+      // ── queue_task completion tracking ──
+      if (mission.type === 'queue_task') {
+        this.checkQueueTaskProgress(mission);
+      }
+    }
+  }
+
+  private checkQueueTaskProgress(mission: MissionRecord): void {
+    const trackedDescription = this.missionTaskDescriptions.get(mission.id);
+    if (!trackedDescription) return;
+
+    // Check each assigned bot's VoyagerLoop for completion
+    for (const botName of mission.assigneeIds) {
+      const bot = this.botManager.getBot(botName);
+      if (!bot) continue;
+
+      const voyager = bot.getVoyagerLoop();
+      if (!voyager) continue;
+
+      const completedTasks = voyager.getCompletedTasks();
+      const failedTasks = voyager.getFailedTasks();
+
+      if (completedTasks.includes(trackedDescription)) {
+        logger.info(
+          { missionId: mission.id, botName, task: trackedDescription },
+          'Mission task completed by VoyagerLoop'
+        );
+        this.updateMissionStatus(mission.id, 'completed');
+        return;
+      }
+
+      if (failedTasks.includes(trackedDescription)) {
+        logger.info(
+          { missionId: mission.id, botName, task: trackedDescription },
+          'Mission task failed in VoyagerLoop'
+        );
+        this.updateMissionStatus(mission.id, 'failed', {
+          error: `Task failed: ${trackedDescription}`,
+        });
+        return;
+      }
+
+      // Also check: if the task is no longer current AND not in the queue,
+      // it may have been decomposed into subtasks that completed/failed.
+      // We leave it running and let the stale detector handle truly stuck missions.
     }
   }
 
@@ -318,9 +498,17 @@ export class MissionManager {
 
   getBotMissionQueue(botName: string): MissionRecord[] {
     const queueIds = this.botMissionQueues.get(botName) ?? [];
-    return queueIds
+    const activeMissions = queueIds
       .map((id) => this.missions.get(id))
       .filter((m): m is MissionRecord => !!m && m.status !== 'completed' && m.status !== 'cancelled' && m.status !== 'failed');
+
+    // Sort by priority (urgent first) then creation time
+    const priorityOrder: Record<MissionPriority, number> = { urgent: 0, high: 1, normal: 2, low: 3 };
+    activeMissions.sort(
+      (a, b) => priorityOrder[a.priority] - priorityOrder[b.priority] || a.createdAt - b.createdAt
+    );
+
+    return activeMissions;
   }
 
   updateBotMissionQueue(
