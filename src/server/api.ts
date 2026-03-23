@@ -11,6 +11,7 @@ import { CommandType } from '../control/CommandTypes';
 import { MissionManager } from '../control/MissionManager';
 import { MarkerStore } from '../control/MarkerStore';
 import { SquadManager } from '../control/SquadManager';
+import { RoleManager } from '../control/RoleManager';
 import { logger } from '../util/logger';
 
 export interface APIServerResult {
@@ -22,6 +23,7 @@ export interface APIServerResult {
   missionManager: MissionManager;
   markerStore: MarkerStore;
   squadManager: SquadManager;
+  roleManager: RoleManager;
 }
 
 export function createAPIServer(botManager: BotManager): APIServerResult {
@@ -798,5 +800,41 @@ export function createAPIServer(botManager: BotManager): APIServerResult {
     res.json({ success: true });
   });
 
-  return { app, httpServer, io, eventLog, commandCenter, missionManager, markerStore, squadManager };
+  // ═══════════════════════════════════════
+  //  CONTROL PLATFORM - ROLE ENDPOINTS
+  // ═══════════════════════════════════════
+
+  const roleManager = new RoleManager(io);
+
+  app.get('/api/roles', (_req: Request, res: Response) => {
+    res.json({ assignments: roleManager.getAssignments() });
+  });
+  app.post('/api/roles/assignments', (req: Request, res: Response) => {
+    const { botName, role, autonomyLevel, homeMarkerId, allowedZoneIds, preferredMissionTypes } = req.body;
+    if (!botName || !role || !autonomyLevel) { res.status(400).json({ error: 'botName, role, and autonomyLevel are required' }); return; }
+    if (!botManager.getBot(botName)) { res.status(404).json({ error: `Bot "${botName}" not found` }); return; }
+    try {
+      const assignment = roleManager.createAssignment({ botName, role, autonomyLevel, homeMarkerId, allowedZoneIds, preferredMissionTypes });
+      res.status(201).json({ assignment });
+    } catch (err: any) { res.status(400).json({ error: err.message }); }
+  });
+  app.get('/api/roles/assignments/:id', (req: Request, res: Response) => {
+    const assignment = roleManager.getAssignment(req.params.id as string);
+    if (!assignment) { res.status(404).json({ error: 'Assignment not found' }); return; }
+    res.json({ assignment });
+  });
+  app.patch('/api/roles/assignments/:id', (req: Request, res: Response) => {
+    try {
+      const updated = roleManager.updateAssignment(req.params.id as string, req.body);
+      if (!updated) { res.status(404).json({ error: 'Assignment not found' }); return; }
+      res.json({ assignment: updated });
+    } catch (err: any) { res.status(400).json({ error: err.message }); }
+  });
+  app.delete('/api/roles/assignments/:id', (req: Request, res: Response) => {
+    const deleted = roleManager.deleteAssignment(req.params.id as string);
+    if (!deleted) { res.status(404).json({ error: 'Assignment not found' }); return; }
+    res.json({ success: true });
+  });
+
+  return { app, httpServer, io, eventLog, commandCenter, missionManager, markerStore, squadManager, roleManager };
 }
