@@ -133,6 +133,72 @@ export interface TerrainData {
   blocks: string[];
 }
 
+// Control platform types (mirroring backend)
+export type CommandType =
+  | 'pause_voyager'
+  | 'resume_voyager'
+  | 'stop_movement'
+  | 'follow_player'
+  | 'walk_to_coords'
+  | 'move_to_marker'
+  | 'return_to_base'
+  | 'regroup'
+  | 'guard_zone'
+  | 'patrol_route'
+  | 'deposit_inventory'
+  | 'equip_best'
+  | 'unstuck';
+
+export type CommandStatus = 'queued' | 'started' | 'succeeded' | 'failed' | 'cancelled';
+
+export interface CommandRecord {
+  id: string;
+  type: CommandType;
+  scope: 'single' | 'squad' | 'selection' | 'all';
+  priority: 'low' | 'normal' | 'high' | 'critical';
+  source: 'dashboard' | 'api' | 'hotkey' | 'automated';
+  status: CommandStatus;
+  targets: string[];
+  params: Record<string, any>;
+  createdAt: string;
+  startedAt?: string;
+  completedAt?: string;
+  error?: { code: string; message: string; botName?: string };
+  result?: Record<string, any>;
+}
+
+export type MissionStatus = 'draft' | 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
+
+export interface MissionRecord {
+  id: string;
+  type: string;
+  title: string;
+  description?: string;
+  assigneeType: 'bot' | 'squad';
+  assigneeIds: string[];
+  status: MissionStatus;
+  priority: 'low' | 'normal' | 'high' | 'urgent';
+  steps: { id: string; type: string; status: string; payload: Record<string, unknown>; error?: string }[];
+  createdAt: number;
+  updatedAt: number;
+  startedAt?: number;
+  completedAt?: number;
+  blockedReason?: string;
+  source: string;
+}
+
+export type RoleType = 'guard' | 'builder' | 'hauler' | 'farmer' | 'miner' | 'scout' | 'merchant' | 'free-agent';
+
+export interface RoleAssignment {
+  id: string;
+  botName: string;
+  role: RoleType;
+  autonomyLevel: 'manual' | 'assisted' | 'autonomous';
+  homeMarkerId?: string;
+  allowedZoneIds: string[];
+  preferredMissionTypes: string[];
+}
+
 // API functions
 export const api = {
   // Bots
@@ -204,4 +270,49 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ x, y, z }),
     }),
+
+  // Commands
+  getCommands: (opts?: { bot?: string; status?: string; limit?: number }) => {
+    const params = new URLSearchParams();
+    if (opts?.bot) params.set('bot', opts.bot);
+    if (opts?.status) params.set('status', opts.status);
+    if (opts?.limit) params.set('limit', String(opts.limit));
+    return fetchJSON<{ commands: CommandRecord[] }>(`/api/commands?${params}`);
+  },
+  createCommand: (data: {
+    type: CommandType;
+    targets: string[];
+    scope?: string;
+    priority?: string;
+    source?: string;
+    params?: Record<string, any>;
+  }) =>
+    fetchJSON<{ command: CommandRecord }>('/api/commands', {
+      method: 'POST',
+      body: JSON.stringify({
+        type: data.type,
+        targets: data.targets,
+        scope: data.scope ?? 'single',
+        priority: data.priority ?? 'normal',
+        source: data.source ?? 'dashboard',
+        params: data.params ?? {},
+      }),
+    }),
+  cancelCommand: (id: string) =>
+    fetchJSON<{ command: CommandRecord }>(`/api/commands/${id}/cancel`, { method: 'POST' }),
+
+  // Missions
+  getMissions: (opts?: { status?: string; bot?: string; limit?: number }) => {
+    const params = new URLSearchParams();
+    if (opts?.status) params.set('status', opts.status);
+    if (opts?.bot) params.set('bot', opts.bot);
+    if (opts?.limit) params.set('limit', String(opts.limit));
+    return fetchJSON<{ missions: MissionRecord[] }>(`/api/missions?${params}`);
+  },
+  cancelMission: (id: string) =>
+    fetchJSON<{ mission: MissionRecord }>(`/api/missions/${id}/cancel`, { method: 'POST' }),
+
+  // Roles
+  getRoleAssignments: () =>
+    fetchJSON<{ assignments: RoleAssignment[] }>('/api/roles').catch(() => ({ assignments: [] })),
 };
