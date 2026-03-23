@@ -7,8 +7,17 @@ import * as path from 'path';
 const VALID_ROLES: RoleType[] = ['guard', 'builder', 'hauler', 'farmer', 'miner', 'scout', 'merchant', 'free-agent'];
 const VALID_AUTONOMY: AutonomyLevel[] = ['manual', 'assisted', 'autonomous'];
 
+export interface OverrideRecord {
+  reason: string;
+  commandId: string;
+  at: number;
+}
+
+const OVERRIDE_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes
+
 export class RoleManager {
   private assignments: RoleAssignmentRecord[] = [];
+  private overrides: Map<string, OverrideRecord> = new Map();
   private readonly filePath: string;
   private readonly io: SocketIOServer;
 
@@ -16,6 +25,49 @@ export class RoleManager {
     this.io = io;
     this.filePath = path.join(process.cwd(), 'data', 'roles.json');
     this.load();
+  }
+
+  // ── Manual Override Tracking ──────────────────────────────
+
+  setOverride(botName: string, reason: string, commandId: string): void {
+    this.overrides.set(botName, { reason, commandId, at: Date.now() });
+    this.io.emit(FLEET_EVENTS.ROLE_UPDATED, { assignments: this.assignments, overrides: this.getOverrides() });
+    logger.info({ botName, reason, commandId }, 'RoleManager: override set');
+  }
+
+  clearOverride(botName: string): void {
+    if (this.overrides.delete(botName)) {
+      this.io.emit(FLEET_EVENTS.ROLE_UPDATED, { assignments: this.assignments, overrides: this.getOverrides() });
+      logger.info({ botName }, 'RoleManager: override cleared');
+    }
+  }
+
+  getOverride(botName: string): OverrideRecord | null {
+    return this.overrides.get(botName) || null;
+  }
+
+  isOverridden(botName: string): boolean {
+    return this.overrides.has(botName);
+  }
+
+  getOverrides(): Record<string, OverrideRecord> {
+    return Object.fromEntries(this.overrides);
+  }
+
+  /** Clear overrides older than 5 minutes. Call this periodically. */
+  checkOverrideTimeouts(): void {
+    const now = Date.now();
+    let changed = false;
+    for (const [botName, record] of this.overrides) {
+      if (now - record.at > OVERRIDE_EXPIRY_MS) {
+        this.overrides.delete(botName);
+        logger.info({ botName, ageMs: now - record.at }, 'RoleManager: override expired');
+        changed = true;
+      }
+    }
+    if (changed) {
+      this.io.emit(FLEET_EVENTS.ROLE_UPDATED, { assignments: this.assignments, overrides: this.getOverrides() });
+    }
   }
 
   // ── Persistence ──────────────────────────────────────────
