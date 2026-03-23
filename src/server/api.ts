@@ -5,6 +5,7 @@ import path from 'path';
 import { Server as SocketIOServer } from 'socket.io';
 import { BotManager } from '../bot/BotManager';
 import { BotInstance } from '../bot/BotInstance';
+import { CommandCenter } from '../control/CommandCenter';
 import { EventLog, BotEvent } from './EventLog';
 import { logger } from '../util/logger';
 
@@ -13,6 +14,7 @@ export interface APIServerResult {
   httpServer: http.Server;
   io: SocketIOServer;
   eventLog: EventLog;
+  commandCenter: CommandCenter;
 }
 
 export function createAPIServer(botManager: BotManager): APIServerResult {
@@ -57,6 +59,9 @@ export function createAPIServer(botManager: BotManager): APIServerResult {
       logger.info({ socketId: socket.id }, 'Dashboard client disconnected');
     });
   });
+
+  // ── CommandCenter ──
+  const commandCenter = new CommandCenter(botManager, io);
 
   // ═══════════════════════════════════════
   //  EXISTING ENDPOINTS (unchanged logic)
@@ -402,5 +407,142 @@ export function createAPIServer(botManager: BotManager): APIServerResult {
     res.json({ success: true });
   });
 
-  return { app, httpServer, io, eventLog };
+  // ═══════════════════════════════════════
+  //  COMMAND CENTER ENDPOINTS
+  // ═══════════════════════════════════════
+
+  // Dispatch a command
+  app.post('/api/commands', async (req: Request, res: Response) => {
+    try {
+      const command = commandCenter.createCommand({
+        type: req.body.type,
+        scope: req.body.scope,
+        priority: req.body.priority,
+        source: req.body.source,
+        targets: req.body.targets,
+        params: req.body.params ?? req.body.payload,
+      });
+      const result = await commandCenter.dispatchCommand(command);
+      res.json({ command: result });
+    } catch (err: any) {
+      res.status(400).json({ error: err?.message ?? 'Invalid command' });
+    }
+  });
+
+  // List commands
+  app.get('/api/commands', (req: Request, res: Response) => {
+    const bot = req.query.bot ? String(req.query.bot) : undefined;
+    const status = req.query.status ? String(req.query.status) as any : undefined;
+    const limit = req.query.limit ? parseInt(String(req.query.limit)) : undefined;
+    const commands = commandCenter.getCommands({ bot, status, limit });
+    res.json({ commands });
+  });
+
+  // Get single command
+  app.get('/api/commands/:id', (req: Request, res: Response) => {
+    const command = commandCenter.getCommand(req.params.id as string);
+    if (!command) {
+      res.status(404).json({ error: 'Command not found' });
+      return;
+    }
+    res.json({ command });
+  });
+
+  // Cancel a command
+  app.post('/api/commands/:id/cancel', (req: Request, res: Response) => {
+    const command = commandCenter.cancelCommand(req.params.id as string);
+    if (!command) {
+      res.status(404).json({ error: 'Command not found' });
+      return;
+    }
+    res.json({ command });
+  });
+
+  // ═══════════════════════════════════════
+  //  BOT ACTION SHORTCUTS (via CommandCenter)
+  // ═══════════════════════════════════════
+
+  // Pause voyager
+  app.post('/api/bots/:name/pause', async (req: Request, res: Response) => {
+    const name = req.params.name as string;
+    const command = commandCenter.createCommand({
+      type: 'pause_voyager', targets: [name], source: 'dashboard',
+    });
+    await commandCenter.dispatchCommand(command);
+    if (command.status === 'failed') {
+      res.status(422).json({ success: false, error: command.error?.message });
+      return;
+    }
+    res.json({ success: true });
+  });
+
+  // Resume voyager
+  app.post('/api/bots/:name/resume', async (req: Request, res: Response) => {
+    const name = req.params.name as string;
+    const command = commandCenter.createCommand({
+      type: 'resume_voyager', targets: [name], source: 'dashboard',
+    });
+    await commandCenter.dispatchCommand(command);
+    if (command.status === 'failed') {
+      res.status(422).json({ success: false, error: command.error?.message });
+      return;
+    }
+    res.json({ success: true });
+  });
+
+  // Stop movement
+  app.post('/api/bots/:name/stop', async (req: Request, res: Response) => {
+    const name = req.params.name as string;
+    const command = commandCenter.createCommand({
+      type: 'stop_movement', targets: [name], source: 'dashboard',
+    });
+    await commandCenter.dispatchCommand(command);
+    if (command.status === 'failed') {
+      res.status(422).json({ success: false, error: command.error?.message });
+      return;
+    }
+    res.json({ success: true });
+  });
+
+  // Follow player
+  app.post('/api/bots/:name/follow', async (req: Request, res: Response) => {
+    const name = req.params.name as string;
+    const { playerName } = req.body;
+    if (!playerName) {
+      res.status(400).json({ error: 'playerName is required' });
+      return;
+    }
+    const command = commandCenter.createCommand({
+      type: 'follow_player', targets: [name], source: 'dashboard',
+      params: { playerName },
+    });
+    await commandCenter.dispatchCommand(command);
+    if (command.status === 'failed') {
+      res.status(422).json({ success: false, error: command.error?.message });
+      return;
+    }
+    res.json({ success: true });
+  });
+
+  // Walk to coordinates
+  app.post('/api/bots/:name/walkto', async (req: Request, res: Response) => {
+    const name = req.params.name as string;
+    const { x, y, z } = req.body;
+    if (x == null || y == null || z == null) {
+      res.status(400).json({ error: 'x, y, z are required' });
+      return;
+    }
+    const command = commandCenter.createCommand({
+      type: 'walk_to_coords', targets: [name], source: 'dashboard',
+      params: { x, y, z },
+    });
+    await commandCenter.dispatchCommand(command);
+    if (command.status === 'failed') {
+      res.status(422).json({ success: false, error: command.error?.message });
+      return;
+    }
+    res.json({ success: true });
+  });
+
+  return { app, httpServer, io, eventLog, commandCenter };
 }
