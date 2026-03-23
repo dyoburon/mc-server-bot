@@ -5,6 +5,7 @@ import type {
   BotStatus, BotEvent, WorldState,
   MarkerRecord, ZoneRecord, RouteRecord,
   SquadRecord, RoleAssignmentRecord,
+  BuildJob, SupplyChain, CommandRecord,
 } from './api';
 
 export interface BotLiveData extends BotStatus {
@@ -28,6 +29,8 @@ interface BotStore {
   connected: boolean;
   world: WorldState | null;
   unreadChats: number;
+  activeBuild: BuildJob | null;
+  chains: SupplyChain[];
 
   setBots: (bots: BotStatus[]) => void;
   updatePosition: (bot: string, x: number, y: number, z: number) => void;
@@ -43,6 +46,8 @@ interface BotStore {
   removePlayer: (name: string) => void;
   incrementUnreadChats: () => void;
   resetUnreadChats: () => void;
+  setActiveBuild: (build: BuildJob | null) => void;
+  setChains: (chains: SupplyChain[]) => void;
 }
 
 function toBotList(byId: Record<string, BotLiveData>): BotLiveData[] {
@@ -67,15 +72,18 @@ function updateBot(
 // Control store for multi-bot selection and fleet operations
 interface ControlStore {
   selectedBotIds: Set<string>;
+  commandHistory: CommandRecord[];
   toggleBotSelection: (botName: string) => void;
   selectBot: (botName: string) => void;
   deselectBot: (botName: string) => void;
   clearSelection: () => void;
   selectAll: (botNames: string[]) => void;
+  upsertCommand: (command: CommandRecord) => void;
 }
 
 export const useControlStore = create<ControlStore>((set) => ({
   selectedBotIds: new Set(),
+  commandHistory: [],
   toggleBotSelection: (botName) =>
     set((state) => {
       const next = new Set(state.selectedBotIds);
@@ -97,6 +105,16 @@ export const useControlStore = create<ControlStore>((set) => ({
     }),
   clearSelection: () => set({ selectedBotIds: new Set() }),
   selectAll: (botNames) => set({ selectedBotIds: new Set(botNames) }),
+  upsertCommand: (command) =>
+    set((state) => {
+      const idx = state.commandHistory.findIndex((c) => c.id === command.id);
+      if (idx >= 0) {
+        const next = [...state.commandHistory];
+        next[idx] = command;
+        return { commandHistory: next };
+      }
+      return { commandHistory: [command, ...state.commandHistory].slice(0, 100) };
+    }),
 }));
 
 // Squad store for fleet management (persisted in memory)
@@ -116,6 +134,8 @@ interface FleetStore {
   selectSquad: (id: string | null) => void;
   addBotToSquad: (squadId: string, botName: string) => void;
   removeBotFromSquad: (squadId: string, botName: string) => void;
+  setSquads: (squads: Squad[]) => void;
+  upsertSquad: (squad: Squad) => void;
 }
 
 function generateId(): string {
@@ -154,6 +174,17 @@ export const useFleetStore = create<FleetStore>((set, get) => ({
         s.id === squadId ? { ...s, botNames: s.botNames.filter((n) => n !== botName) } : s,
       ),
     })),
+  setSquads: (squads) => set({ squads }),
+  upsertSquad: (squad) =>
+    set((state) => {
+      const idx = state.squads.findIndex((s) => s.id === squad.id);
+      if (idx >= 0) {
+        const next = [...state.squads];
+        next[idx] = squad;
+        return { squads: next };
+      }
+      return { squads: [...state.squads, squad] };
+    }),
 }));
 
 export const useBotStore = create<BotStore>((set) => ({
@@ -165,6 +196,8 @@ export const useBotStore = create<BotStore>((set) => ({
   connected: false,
   world: null,
   unreadChats: 0,
+  activeBuild: null,
+  chains: [],
 
   setBots: (bots) =>
     set((state) => {
@@ -234,6 +267,9 @@ export const useBotStore = create<BotStore>((set) => ({
     set((state) => ({ unreadChats: state.unreadChats + 1 })),
 
   resetUnreadChats: () => set({ unreadChats: 0 }),
+
+  setActiveBuild: (build) => set({ activeBuild: build }),
+  setChains: (chains) => set({ chains }),
 }));
 
 /* ─── World Planning Store ─── */
@@ -243,7 +279,7 @@ interface WorldPlanningStore {
   zones: ZoneRecord[];
   routes: RouteRecord[];
   selectedMapObject: { type: 'marker' | 'zone' | 'route'; id: string } | null;
-  drawingMode: 'marker' | 'zone' | 'route' | null;
+  drawingMode: 'marker' | 'zone' | 'route' | 'add-marker' | null;
 
   setMarkers: (markers: MarkerRecord[]) => void;
   upsertMarker: (marker: MarkerRecord) => void;
@@ -255,7 +291,7 @@ interface WorldPlanningStore {
   upsertRoute: (route: RouteRecord) => void;
   removeRoute: (id: string) => void;
   setSelectedMapObject: (obj: WorldPlanningStore['selectedMapObject']) => void;
-  setDrawingMode: (mode: WorldPlanningStore['drawingMode']) => void;
+  setDrawingMode: (mode: 'marker' | 'zone' | 'route' | 'add-marker' | 'none' | null) => void;
 }
 
 function upsertById<T extends { id: string }>(list: T[], item: T): T[] {
@@ -292,24 +328,12 @@ export const useWorldStore = create<WorldPlanningStore>((set) => ({
   removeRoute: (id) => set((s) => ({ routes: removeById(s.routes, id) })),
 
   setSelectedMapObject: (obj) => set({ selectedMapObject: obj }),
-  setDrawingMode: (mode) => set({ drawingMode: mode }),
+  setDrawingMode: (mode) => set({ drawingMode: mode === 'none' ? null : mode }),
 }));
 
-/* ─── Fleet Store ─── */
-
-interface FleetStore {
-  squads: SquadRecord[];
-  setSquads: (squads: SquadRecord[]) => void;
-  upsertSquad: (squad: SquadRecord) => void;
-  removeSquad: (id: string) => void;
-}
-
-export const useFleetStore = create<FleetStore>((set) => ({
-  squads: [],
-  setSquads: (squads) => set({ squads }),
-  upsertSquad: (squad) => set((s) => ({ squads: upsertById(s.squads, squad) })),
-  removeSquad: (id) => set((s) => ({ squads: removeById(s.squads, id) })),
-}));
+/* ─── Fleet Store (SquadRecord-based, merged) ─── */
+// Note: The primary useFleetStore is defined above with the Squad interface.
+// This section adds SquadRecord-based helpers as a secondary store if needed.
 
 /* ─── Role Store ─── */
 

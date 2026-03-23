@@ -177,27 +177,27 @@ export default function RolesPage() {
 
                   {/* Autonomy */}
                   <span className={`text-[11px] font-medium px-2 py-0.5 rounded capitalize ${
-                    a.autonomy === 'autonomous' ? 'text-emerald-400 bg-emerald-500/10' :
-                    a.autonomy === 'assisted' ? 'text-amber-400 bg-amber-500/10' :
+                    a.autonomyLevel === 'autonomous' ? 'text-emerald-400 bg-emerald-500/10' :
+                    a.autonomyLevel === 'assisted' ? 'text-amber-400 bg-amber-500/10' :
                     'text-zinc-400 bg-zinc-700/30'
                   }`}>
-                    {a.autonomy}
+                    {a.autonomyLevel}
                   </span>
 
                   {/* Home marker */}
-                  {a.homeMarker && (
+                  {a.homeMarkerId && (
                     <span className="text-[10px] text-zinc-500 flex items-center gap-1">
                       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
                       </svg>
-                      {a.homeMarker}
+                      {a.homeMarkerId}
                     </span>
                   )}
 
                   {/* Zones */}
-                  {a.allowedZones && a.allowedZones.length > 0 && (
+                  {a.allowedZoneIds && a.allowedZoneIds.length > 0 && (
                     <div className="flex items-center gap-1">
-                      {a.allowedZones.map((z) => (
+                      {a.allowedZoneIds.map((z: string) => (
                         <span key={z} className="text-[10px] text-zinc-500 bg-zinc-800/60 px-1.5 py-0.5 rounded">
                           {z}
                         </span>

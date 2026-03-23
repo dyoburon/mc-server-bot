@@ -90,7 +90,7 @@ export default function MapContextMenu({
   } else if (target.type === 'marker') {
     items.push({
       label: `Move Here${selectedBot ? '' : ' (select bot)'}`,
-      onClick: () => { onWalkHere(target.marker.x, target.marker.z); onClose(); },
+      onClick: () => { onWalkHere(target.marker.position.x, target.marker.position.z); onClose(); },
       disabled: !selectedBot,
     });
     items.push({

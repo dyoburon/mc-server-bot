@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { api, type RoleAssignmentRecord, type Marker, type Zone } from '@/lib/api';
+import { api, type RoleAssignmentRecord, type MarkerRecord, type ZoneRecord } from '@/lib/api';
 
 export const ROLE_COLORS: Record<string, string> = {
   guard: '#EF4444',
@@ -53,11 +53,11 @@ interface RoleAssignmentPanelProps {
 
 export function RoleAssignmentPanel({ botName, existingAssignment, onSave, onCancel }: RoleAssignmentPanelProps) {
   const [role, setRole] = useState(existingAssignment?.role || 'free-agent');
-  const [autonomy, setAutonomy] = useState<'manual' | 'assisted' | 'autonomous'>(existingAssignment?.autonomy || 'assisted');
-  const [homeMarker, setHomeMarker] = useState(existingAssignment?.homeMarker || '');
-  const [allowedZones, setAllowedZones] = useState<string[]>(existingAssignment?.allowedZones || []);
-  const [markers, setMarkers] = useState<Marker[]>([]);
-  const [zones, setZones] = useState<Zone[]>([]);
+  const [autonomy, setAutonomy] = useState<'manual' | 'assisted' | 'autonomous'>(existingAssignment?.autonomyLevel || 'assisted');
+  const [homeMarker, setHomeMarker] = useState(existingAssignment?.homeMarkerId || '');
+  const [allowedZones, setAllowedZones] = useState<string[]>(existingAssignment?.allowedZoneIds || []);
+  const [markers, setMarkers] = useState<MarkerRecord[]>([]);
+  const [zones, setZones] = useState<ZoneRecord[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -70,9 +70,9 @@ export function RoleAssignmentPanel({ botName, existingAssignment, onSave, onCan
     setSaving(true);
     setError(null);
     try {
-      const payload = { botName, role, autonomy, homeMarker: homeMarker || undefined, allowedZones: allowedZones.length > 0 ? allowedZones : undefined };
+      const payload: Partial<RoleAssignmentRecord> = { botName, role, autonomyLevel: autonomy, homeMarkerId: homeMarker || undefined, allowedZoneIds: allowedZones.length > 0 ? allowedZones : [] };
       if (existingAssignment) {
-        await api.updateRoleAssignment(botName, { role, autonomy, homeMarker: homeMarker || undefined, allowedZones: allowedZones.length > 0 ? allowedZones : undefined });
+        await api.updateRoleAssignment(botName, { role, autonomyLevel: autonomy, homeMarkerId: homeMarker || undefined, allowedZoneIds: allowedZones.length > 0 ? allowedZones : [] });
       } else {
         await api.createRoleAssignment(payload);
       }

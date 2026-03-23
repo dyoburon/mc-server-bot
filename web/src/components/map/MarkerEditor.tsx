@@ -23,9 +23,9 @@ interface MarkerEditorProps {
 export default function MarkerEditor({ marker, defaultX, defaultZ, onSave, onCancel }: MarkerEditorProps) {
   const [name, setName] = useState(marker?.name ?? '');
   const [kind, setKind] = useState<MarkerKind>(marker?.kind ?? 'custom');
-  const [x, setX] = useState(marker?.x ?? defaultX ?? 0);
-  const [y, setY] = useState(marker?.y ?? 64);
-  const [z, setZ] = useState(marker?.z ?? defaultZ ?? 0);
+  const [x, setX] = useState(marker?.position?.x ?? defaultX ?? 0);
+  const [y, setY] = useState(marker?.position?.y ?? 64);
+  const [z, setZ] = useState(marker?.position?.z ?? defaultZ ?? 0);
   const [tags, setTags] = useState(marker?.tags?.join(', ') ?? '');
   const [notes, setNotes] = useState(marker?.notes ?? '');
 
@@ -33,9 +33,9 @@ export default function MarkerEditor({ marker, defaultX, defaultZ, onSave, onCan
     if (marker) {
       setName(marker.name);
       setKind(marker.kind);
-      setX(marker.x);
-      setY(marker.y);
-      setZ(marker.z);
+      setX(marker.position.x);
+      setY(marker.position.y);
+      setZ(marker.position.z);
       setTags(marker.tags?.join(', ') ?? '');
       setNotes(marker.notes ?? '');
     }

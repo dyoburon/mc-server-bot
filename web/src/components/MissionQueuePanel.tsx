@@ -54,7 +54,7 @@ export function MissionQueuePanel({ botName }: Props) {
     try {
       // Try the mission queue endpoint; fall back to constructing from voyager task data
       const data = await api.getBotMissionQueue(botName);
-      setMissions(data.missions as Mission[]);
+      setMissions(data.missions as unknown as Mission[]);
     } catch {
       // Fallback: build mission list from voyager task info
       try {

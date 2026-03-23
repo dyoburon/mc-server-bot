@@ -126,11 +126,11 @@ export default function BotProfilePage() {
                       {roleAssignment.role.replace('-', ' ')}
                     </span>
                     <span className={`text-[10px] font-medium px-2 py-0.5 rounded capitalize ${
-                      roleAssignment.autonomy === 'autonomous' ? 'text-emerald-400 bg-emerald-500/10' :
-                      roleAssignment.autonomy === 'assisted' ? 'text-amber-400 bg-amber-500/10' :
+                      roleAssignment.autonomyLevel === 'autonomous' ? 'text-emerald-400 bg-emerald-500/10' :
+                      roleAssignment.autonomyLevel === 'assisted' ? 'text-amber-400 bg-amber-500/10' :
                       'text-zinc-400 bg-zinc-700/30'
                     }`}>
-                      {roleAssignment.autonomy}
+                      {roleAssignment.autonomyLevel}
                     </span>
                   </div>
                 );

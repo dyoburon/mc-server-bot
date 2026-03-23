@@ -1,26 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { useBotStore } from '@/lib/store';
+import { useBotStore, useWorldStore } from '@/lib/store';
 import { api } from '@/lib/api';
-<<<<<<< HEAD
-import { STATE_COLORS } from '@/lib/constants';
-import { getBlockColor } from '@/lib/blockColors';
-import { MapToolbar } from '@/components/map/MapToolbar';
-import { MapEntitySidebar } from '@/components/map/MapEntitySidebar';
-import {
-  MIN_SCALE,
-  MAX_SCALE,
-  TRAIL_LENGTH,
-  TERRAIN_RADIUS,
-  TERRAIN_STEP,
-  ZOOM_SENSITIVITY,
-  collectEntities,
-  type MapEntity,
-  type MapMode,
-  type ShowState,
-} from '@/components/map/mapDrawing';
-=======
 import type { MarkerRecord, MarkerKind, ZoneRecord, RouteRecord } from '@/lib/api';
 import { getPersonalityColor, PLAYER_COLOR, STATE_COLORS } from '@/lib/constants';
 import { getBlockColor } from '@/lib/blockColors';
@@ -63,22 +45,21 @@ interface MapEntity {
   state?: string;
   personality?: string;
 }
->>>>>>> worktree-agent-ab88f285
 
 export default function MapPage() {
   const bots = useBotStore((s) => s.botList);
   const players = useBotStore((s) => s.playerList);
-  const markers = useBotStore((s) => s.markers);
-  const zones = useBotStore((s) => s.zones);
-  const routes = useBotStore((s) => s.routes);
-  const mapDrawingMode = useBotStore((s) => s.mapDrawingMode);
-  const setMarkers = useBotStore((s) => s.setMarkers);
-  const addMarker = useBotStore((s) => s.addMarker);
-  const removeMarker = useBotStore((s) => s.removeMarker);
-  const updateMarkerInStore = useBotStore((s) => s.updateMarker);
-  const setZones = useBotStore((s) => s.setZones);
-  const setRoutes = useBotStore((s) => s.setRoutes);
-  const setMapDrawingMode = useBotStore((s) => s.setMapDrawingMode);
+  const markers = useWorldStore((s) => s.markers);
+  const zones = useWorldStore((s) => s.zones);
+  const routes = useWorldStore((s) => s.routes);
+  const mapDrawingMode = useWorldStore((s) => s.drawingMode);
+  const setMarkers = useWorldStore((s) => s.setMarkers);
+  const addMarker = useWorldStore((s) => s.upsertMarker);
+  const removeMarker = useWorldStore((s) => s.removeMarker);
+  const updateMarkerInStore = (_id: string, marker: MarkerRecord) => useWorldStore.getState().upsertMarker(marker);
+  const setZones = useWorldStore((s) => s.setZones);
+  const setRoutes = useWorldStore((s) => s.setRoutes);
+  const setMapDrawingMode = useWorldStore((s) => s.setDrawingMode);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -90,11 +71,7 @@ export default function MapPage() {
   const dragStartRef = useRef({ x: 0, y: 0 });
   const hoveredRef = useRef<string | null>(null);
   const selectedRef = useRef<string | null>(null);
-<<<<<<< HEAD
-  const showRef = useRef<ShowState>({ bots: true, players: true, trails: true, grid: true, coords: true, terrain: true });
-=======
   const showRef = useRef({ bots: true, players: true, trails: true, grid: true, coords: true, terrain: true, markers: true, zones: true, routes: true });
->>>>>>> worktree-agent-ab88f285
   const botsRef = useRef(bots);
   const playersRef = useRef(players);
   const markersRef = useRef(markers);
@@ -107,28 +84,12 @@ export default function MapPage() {
   const terrainMeta = useRef<{ cx: number; cz: number; radius: number } | null>(null);
   const initializedRef = useRef(false);
 
-  // Interaction mode state — only 'navigate' and 'select' are active for now
-  const [mapMode, setMapMode] = useState<MapMode>('navigate');
-  const mapModeRef = useRef<MapMode>(mapMode);
-
   // State just for UI re-renders (toolbar, sidebar)
   const [, forceRender] = useState(0);
   const kick = () => forceRender((n) => n + 1);
 
   const [terrainStatus, setTerrainStatus] = useState<'idle' | 'loading' | 'loaded' | 'error'>('idle');
 
-<<<<<<< HEAD
-  // Keep refs in sync with zustand — inside useEffect, not during render
-  useEffect(() => {
-    botsRef.current = bots;
-    playersRef.current = players;
-  }, [bots, players]);
-
-  // Keep mapMode ref in sync
-  useEffect(() => {
-    mapModeRef.current = mapMode;
-  }, [mapMode]);
-=======
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{ target: ContextTarget; screenX: number; screenY: number } | null>(null);
 
@@ -152,7 +113,6 @@ export default function MapPage() {
     api.getZones().then((r) => setZones(r.zones)).catch(() => {});
     api.getRoutes().then((r) => setRoutes(r.routes)).catch(() => {});
   }, [setMarkers, setZones, setRoutes]);
->>>>>>> worktree-agent-ab88f285
 
   // Load terrain
   const loadTerrain = useCallback(async (centerX: number, centerZ: number) => {
@@ -260,16 +220,11 @@ export default function MapPage() {
       const offset = offsetRef.current;
       const scale = scaleRef.current;
       const show = showRef.current;
-<<<<<<< HEAD
-      const currentBots = botsRef.current;
-      const currentPlayers = playersRef.current;
-=======
       const curBots = botsRef.current;
       const curPlayers = playersRef.current;
       const curMarkers = markersRef.current;
       const curZones = zonesRef.current;
       const curRoutes = routesRef.current;
->>>>>>> worktree-agent-ab88f285
       const hovered = hoveredRef.current;
       const selected = selectedRef.current;
 
@@ -338,12 +293,14 @@ export default function MapPage() {
       // --- Draw zones ---
       if (show.zones) {
         for (const zone of curZones) {
-          const zoneColor = zone.color || ZONE_MODE_COLORS[zone.mode] || '#6B7280';
-          const zsx = cx + zone.cx * scale + offset.x;
-          const zsy = cy + zone.cz * scale + offset.y;
+          const zoneColor = ZONE_MODE_COLORS[zone.mode] || '#6B7280';
+          let zsx = cx + offset.x;
+          let zsy = cy + offset.y;
 
-          if (zone.shape === 'circle' && zone.radius) {
-            const sr = zone.radius * scale;
+          if (zone.shape === 'circle' && zone.circle) {
+            zsx = cx + zone.circle.x * scale + offset.x;
+            zsy = cy + zone.circle.z * scale + offset.y;
+            const sr = zone.circle.radius * scale;
             ctx.beginPath();
             ctx.arc(zsx, zsy, sr, 0, Math.PI * 2);
             ctx.fillStyle = zoneColor + '18';
@@ -353,9 +310,11 @@ export default function MapPage() {
             ctx.setLineDash([6, 4]);
             ctx.stroke();
             ctx.setLineDash([]);
-          } else if (zone.shape === 'rectangle' && zone.width && zone.height) {
-            const sw = zone.width * scale;
-            const sh = zone.height * scale;
+          } else if (zone.shape === 'rectangle' && zone.rectangle) {
+            zsx = cx + ((zone.rectangle.minX + zone.rectangle.maxX) / 2) * scale + offset.x;
+            zsy = cy + ((zone.rectangle.minZ + zone.rectangle.maxZ) / 2) * scale + offset.y;
+            const sw = (zone.rectangle.maxX - zone.rectangle.minX) * scale;
+            const sh = (zone.rectangle.maxZ - zone.rectangle.minZ) * scale;
             ctx.fillStyle = zoneColor + '18';
             ctx.fillRect(zsx - sw / 2, zsy - sh / 2, sw, sh);
             ctx.strokeStyle = zoneColor + '60';
@@ -380,8 +339,8 @@ export default function MapPage() {
       if (show.routes) {
         const markerById = new Map(curMarkers.map((m) => [m.id, m]));
         for (const route of curRoutes) {
-          const waypoints = route.markerIds
-            .map((id) => markerById.get(id))
+          const waypoints = route.waypointIds
+            .map((id: string) => markerById.get(id))
             .filter((m): m is MarkerRecord => !!m);
 
           if (waypoints.length < 2) continue;
@@ -393,8 +352,8 @@ export default function MapPage() {
           ctx.beginPath();
 
           for (let i = 0; i < waypoints.length; i++) {
-            const sx = cx + waypoints[i].x * scale + offset.x;
-            const sy = cx + waypoints[i].z * scale + offset.y;
+            const sx = cx + waypoints[i].position.x * scale + offset.x;
+            const sy = cx + waypoints[i].position.z * scale + offset.y;
             if (i === 0) ctx.moveTo(sx, sy);
             else ctx.lineTo(sx, sy);
           }
@@ -403,10 +362,10 @@ export default function MapPage() {
 
           // Draw arrows along route segments
           for (let i = 0; i < waypoints.length - 1; i++) {
-            const ax = cx + waypoints[i].x * scale + offset.x;
-            const ay = cy + waypoints[i].z * scale + offset.y;
-            const bx = cx + waypoints[i + 1].x * scale + offset.x;
-            const by = cy + waypoints[i + 1].z * scale + offset.y;
+            const ax = cx + waypoints[i].position.x * scale + offset.x;
+            const ay = cy + waypoints[i].position.z * scale + offset.y;
+            const bx = cx + waypoints[i + 1].position.x * scale + offset.x;
+            const by = cy + waypoints[i + 1].position.z * scale + offset.y;
             const midX = (ax + bx) / 2;
             const midY = (ay + by) / 2;
             const angle = Math.atan2(by - ay, bx - ax);
@@ -426,9 +385,6 @@ export default function MapPage() {
       }
 
       // Collect entities
-<<<<<<< HEAD
-      const entities = collectEntities(currentBots, currentPlayers, show.bots, show.players);
-=======
       const entities: MapEntity[] = [];
       const drawnNames = new Set<string>();
       if (show.bots) {
@@ -444,7 +400,6 @@ export default function MapPage() {
           entities.push({ name: player.name, x: player.position.x, z: player.position.z, color: PLAYER_COLOR, type: 'player' });
         }
       }
->>>>>>> worktree-agent-ab88f285
 
       entityPositions.current.clear();
       markerPositions.current.clear();
@@ -517,8 +472,8 @@ export default function MapPage() {
       // --- Draw markers (diamond/pin shapes) ---
       if (show.markers) {
         for (const marker of curMarkers) {
-          const sx = cx + marker.x * scale + offset.x;
-          const sy = cy + marker.z * scale + offset.y;
+          const sx = cx + marker.position.x * scale + offset.x;
+          const sy = cy + marker.position.z * scale + offset.y;
           if (sx < -30 || sx > w + 30 || sy < -30 || sy > h + 30) continue;
 
           const color = MARKER_KIND_COLORS[marker.kind] || '#E5E7EB';
@@ -554,7 +509,7 @@ export default function MapPage() {
           if (isHov) {
             ctx.fillStyle = '#ffffff70';
             ctx.font = '9px monospace';
-            ctx.fillText(`${Math.round(marker.x)}, ${Math.round(marker.z)}`, sx, sy + size + 12);
+            ctx.fillText(`${Math.round(marker.position.x)}, ${Math.round(marker.position.z)}`, sx, sy + size + 12);
           }
           ctx.restore();
         }
@@ -609,19 +564,6 @@ export default function MapPage() {
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
 
-<<<<<<< HEAD
-    // In navigate or select mode, clicking an entity selects it
-    const mode = mapModeRef.current;
-    if (mode === 'navigate' || mode === 'select') {
-      for (const [name, pos] of entityPositions.current) {
-        const dx = mx - pos.sx;
-        const dy = my - pos.sy;
-        if (dx * dx + dy * dy < pos.radius * pos.radius) {
-          selectedRef.current = selectedRef.current === name ? null : name;
-          kick();
-          return;
-        }
-=======
     // Check if clicking in add-marker mode
     if (mapDrawingMode === 'add-marker') {
       const world = screenToWorld(e.clientX, e.clientY);
@@ -634,7 +576,6 @@ export default function MapPage() {
     if (hit) {
       if (hit.type === 'entity') {
         selectedRef.current = selectedRef.current === hit.name ? null : hit.name;
->>>>>>> worktree-agent-ab88f285
       }
       kick();
       return;
@@ -780,7 +721,16 @@ export default function MapPage() {
         updateMarkerInStore(markerEditor.marker.id, result.marker);
       } catch {
         // If API doesn't exist, update locally
-        updateMarkerInStore(markerEditor.marker.id, data);
+        const updated: MarkerRecord = {
+          ...markerEditor.marker,
+          name: data.name,
+          kind: data.kind,
+          position: { x: data.x, y: data.y, z: data.z },
+          tags: data.tags,
+          notes: data.notes,
+          updatedAt: Date.now(),
+        };
+        updateMarkerInStore(markerEditor.marker.id, updated);
       }
     } else {
       // Create new
@@ -790,9 +740,14 @@ export default function MapPage() {
       } catch {
         // If API doesn't exist, create locally with generated id
         const localMarker: MarkerRecord = {
-          ...data,
           id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          name: data.name,
+          kind: data.kind,
+          position: { x: data.x, y: data.y, z: data.z },
+          tags: data.tags,
+          notes: data.notes,
           createdAt: Date.now(),
+          updatedAt: Date.now(),
         };
         addMarker(localMarker);
       }
@@ -850,16 +805,21 @@ export default function MapPage() {
   };
 
   // Sidebar entities
-  const allEntities = collectEntities(bots, players, true, true);
+  const botNames = new Set(bots.map((b) => b.name.toLowerCase()));
+  const allEntities: MapEntity[] = [
+    ...bots.filter((b) => b.position).map((bot) => ({
+      name: bot.name, x: bot.position!.x, z: bot.position!.z,
+      color: getPersonalityColor(bot.personality), type: 'bot' as const,
+      state: bot.state, personality: bot.personality,
+    })),
+    ...players.filter((p) => p.isOnline && p.position && !botNames.has(p.name.toLowerCase())).map((player) => ({
+      name: player.name, x: player.position!.x, z: player.position!.z,
+      color: PLAYER_COLOR, type: 'player' as const,
+    })),
+  ];
 
   const show = showRef.current;
-  const toggleShow = (key: keyof ShowState) => { showRef.current = { ...show, [key]: !show[key] }; kick(); };
-
-  const handleEntitySelect = (entity: MapEntity) => {
-    centerOn(entity.x, entity.z);
-    selectedRef.current = entity.name;
-    kick();
-  };
+  const toggleShow = (key: keyof typeof show) => { showRef.current = { ...show, [key]: !show[key] }; kick(); };
 
   const cursorClass = mapDrawingMode === 'add-marker'
     ? 'cursor-crosshair'
@@ -872,29 +832,6 @@ export default function MapPage() {
   return (
     <div className="h-screen flex flex-col">
       {/* Toolbar */}
-<<<<<<< HEAD
-      <MapToolbar
-        show={show}
-        toggleShow={toggleShow}
-        scale={scaleRef.current}
-        onZoomIn={() => { scaleRef.current = Math.min(MAX_SCALE, scaleRef.current * 1.3); kick(); }}
-        onZoomOut={() => { scaleRef.current = Math.max(MIN_SCALE, scaleRef.current / 1.3); kick(); }}
-        terrainStatus={terrainStatus}
-        onReloadTerrain={() => {
-          terrainMeta.current = null;
-          terrainCanvas.current = null;
-          loadTerrain(-offsetRef.current.x / scaleRef.current, -offsetRef.current.y / scaleRef.current);
-        }}
-      />
-
-      <div className="flex-1 flex min-h-0">
-        {/* Entity sidebar */}
-        <MapEntitySidebar
-          entities={allEntities}
-          selectedEntity={selectedRef.current}
-          onSelect={handleEntitySelect}
-        />
-=======
       <div className="px-4 py-2.5 border-b border-zinc-800/60 flex items-center justify-between bg-zinc-950/80 backdrop-blur-sm shrink-0">
         <div className="flex items-center gap-4">
           <h1 className="text-sm font-bold text-white">World Map</h1>
@@ -1000,7 +937,7 @@ export default function MapPage() {
                 {markers.map((marker) => (
                   <button
                     key={marker.id}
-                    onClick={() => { centerOn(marker.x, marker.z); kick(); }}
+                    onClick={() => { centerOn(marker.position.x, marker.position.z); kick(); }}
                     className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left transition-colors hover:bg-zinc-800/50"
                   >
                     <span
@@ -1012,7 +949,7 @@ export default function MapPage() {
                     />
                     <div className="min-w-0 flex-1">
                       <p className="text-[11px] font-medium text-zinc-300 truncate">{marker.name}</p>
-                      <p className="text-[9px] text-zinc-600 font-mono tabular-nums">{Math.round(marker.x)}, {Math.round(marker.z)}</p>
+                      <p className="text-[9px] text-zinc-600 font-mono tabular-nums">{Math.round(marker.position.x)}, {Math.round(marker.position.z)}</p>
                     </div>
                     <span className="text-[9px] text-zinc-600 uppercase shrink-0">
                       {marker.kind.slice(0, 3)}
@@ -1023,7 +960,6 @@ export default function MapPage() {
             </div>
           )}
         </div>
->>>>>>> worktree-agent-ab88f285
 
         {/* Canvas */}
         <div
@@ -1106,9 +1042,6 @@ export default function MapPage() {
   );
 }
 
-<<<<<<< HEAD
-function LegendItem({ shape, color, label }: { shape: 'circle' | 'square'; color: string; label: string }) {
-=======
 function ToggleBtn({ active, onClick, label, color }: { active: boolean; onClick: () => void; label: string; color?: string }) {
   return (
     <button
@@ -1120,7 +1053,6 @@ function ToggleBtn({ active, onClick, label, color }: { active: boolean; onClick
 }
 
 function LegendItem({ shape, color, label }: { shape: 'circle' | 'square' | 'diamond'; color: string; label: string }) {
->>>>>>> worktree-agent-ab88f285
   return (
     <div className="flex items-center gap-2">
       <span

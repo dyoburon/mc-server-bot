@@ -252,16 +252,23 @@ export interface MissionStep {
   error?: string;
 }
 
+export type MarkerKind = 'base' | 'storage' | 'build-site' | 'mine' | 'village' | 'custom';
+
 export interface MarkerRecord {
   id: string;
   name: string;
-  kind: 'base' | 'storage' | 'build-site' | 'mine' | 'village' | 'custom';
+  kind: MarkerKind;
   position: { x: number; y: number; z: number };
   tags: string[];
   notes?: string;
   createdAt: number;
   updatedAt: number;
 }
+
+/** Alias kept for backward compatibility */
+export type Marker = MarkerRecord;
+/** Alias kept for backward compatibility */
+export type Zone = ZoneRecord;
 
 export interface ZoneRecord {
   id: string;
@@ -319,7 +326,7 @@ export const api = {
   getBotRelationships: (name: string) => fetchJSON<{ relationships: Record<string, number> }>(`/api/bots/${name}/relationships`),
   getBotConversations: (name: string) => fetchJSON<{ conversations: Record<string, ChatMessage[]> }>(`/api/bots/${name}/conversations`),
   getBotTasks: (name: string) => fetchJSON<{ currentTask: string | null; completedTasks: string[]; failedTasks: string[] }>(`/api/bots/${name}/tasks`),
-  getBotMissionQueue: (name: string) => fetchJSON<{ missions: { id: string; title: string; type: string; priority: number; status: string; createdAt: number }[] }>(`/api/bots/${name}/missions`),
+  getBotMissions: (name: string) => fetchJSON<{ missions: { id: string; title: string; type: string; priority: number; status: string; createdAt: number }[] }>(`/api/bots/${name}/missions`),
 
   // Create / delete
   createBot: (name: string, personality: string, mode?: string) =>
