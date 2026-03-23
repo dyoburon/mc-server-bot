@@ -7,7 +7,7 @@ async function mineOneSpruceLog(bot) {
   });
   let spruceLog = findSpruce();
   if (!spruceLog) {
-    await exploreUntil('north', 60, findSpruce);
+    await exploreUntil(bot, 'north', 60, () => findSpruce());
   }
   await mineBlock(targetName, targetCount);
 }

@@ -5,8 +5,8 @@ async function mineThreeSpruceLogs(bot) {
     matching: b => b.name === targetName,
     maxDistance: 32
   });
-  let spruceLog = findSpruce();
-  if (!spruceLog) {
+  let spruceBlock = findSpruce();
+  if (!spruceBlock) {
     await exploreUntil('north', 60, () => findSpruce());
   }
   await mineBlock(targetName, targetCount);

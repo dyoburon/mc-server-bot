@@ -194,15 +194,15 @@
     "file": "mine_1_oak_log.js"
   },
   {
-    "quality": 0.7,
-    "successCount": 0,
+    "quality": 0.8,
+    "successCount": 1,
     "failureCount": 0,
     "name": "walk_to_the_nearest_player",
     "description": "Walk to the nearest player",
     "keywords": [
-      "guard",
-      "protect",
-      "player"
+      "walk",
+      "player",
+      "approach"
     ],
     "file": "walk_to_the_nearest_player.js"
   },
@@ -479,17 +479,17 @@
     "file": "minethenearestoaklog.js"
   },
   {
-    "quality": 0.8,
-    "successCount": 13,
-    "failureCount": 0,
     "name": "mine_3_spruce_logs",
     "description": "Mine 3 spruce logs",
     "keywords": [
-      "mine",
       "spruce_log",
-      "wood"
+      "builder",
+      "shelter"
     ],
-    "file": "mine_3_spruce_logs.js"
+    "file": "mine_3_spruce_logs.js",
+    "quality": 0.8,
+    "successCount": 14,
+    "failureCount": 0
   },
   {
     "quality": 0.8,
@@ -501,39 +501,31 @@
     "file": "mine_2_moss_blocks.js"
   },
   {
-    "quality": 0.9,
-    "successCount": 8,
-    "failureCount": 0,
     "name": "mine_3_oak_logs_at",
-    "description": "Mine 3 oak logs at 717, 79, 245",
-    "keywords": [
-      "mine",
-      "oak_log",
-      "wood"
-    ],
-    "file": "mine_3_oak_logs_at.js"
-  },
-  {
-    "quality": 0.9,
-    "successCount": 11,
-    "failureCount": 0,
-    "name": "craft_1_crafting_table_using",
-    "description": "Craft 1 crafting table using 1 oak log",
+    "description": "Mine 3 oak logs at 798, 7",
     "keywords": [],
-    "file": "craft_1_crafting_table_using.js"
+    "file": "mine_3_oak_logs_at.js",
+    "quality": 0.9,
+    "successCount": 10,
+    "failureCount": 0
   },
   {
+    "name": "craft_1_crafting_table_using",
+    "description": "Craft 1 crafting table using 4 spruce planks",
+    "keywords": [],
+    "file": "craft_1_crafting_table_using.js",
     "quality": 0.9,
-    "successCount": 1,
-    "failureCount": 0,
+    "successCount": 12,
+    "failureCount": 0
+  },
+  {
     "name": "craft_12_spruce_planks_at",
-    "description": "Craft 12 spruce planks at the crafting table at 807, 64, 232",
-    "keywords": [
-      "craft",
-      "spruce_planks",
-      "crafting_table"
-    ],
-    "file": "craft_12_spruce_planks_at.js"
+    "description": "Craft 12 spruce planks at the crafting table at 807,",
+    "keywords": [],
+    "file": "craft_12_spruce_planks_at.js",
+    "quality": 0.9,
+    "successCount": 2,
+    "failureCount": 0
   },
   {
     "quality": 0.8,
@@ -558,13 +550,13 @@
     "file": "walk_to_the_chest_at.js"
   },
   {
+    "quality": 0.8,
+    "successCount": 2,
+    "failureCount": 0,
     "name": "mine1oaklog",
     "description": "mine_1_oak_log",
     "keywords": [],
-    "file": "mine1oaklog.js",
-    "quality": 0.8,
-    "successCount": 2,
-    "failureCount": 0
+    "file": "mine1oaklog.js"
   },
   {
     "quality": 0.9,
@@ -718,5 +710,27 @@
       "wood"
     ],
     "file": "mine_1_oak_log_at.js"
+  },
+  {
+    "name": "place_the_crafting_table_and",
+    "description": "Place the crafting table and craft 4 sticks",
+    "keywords": [
+      "crafting",
+      "sticks",
+      "tools"
+    ],
+    "file": "place_the_crafting_table_and.js",
+    "quality": 0.9,
+    "successCount": 1,
+    "failureCount": 0
+  },
+  {
+    "name": "craft_24_oak_planks_from",
+    "description": "Craft 24 oak planks from 6 oak logs",
+    "keywords": [],
+    "file": "craft_24_oak_planks_from.js",
+    "quality": 0.9,
+    "successCount": 1,
+    "failureCount": 0
   }
 ]

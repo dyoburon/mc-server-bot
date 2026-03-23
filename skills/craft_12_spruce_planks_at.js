@@ -9,21 +9,13 @@ async function craftTwelveSprucePlanksAtTable(bot) {
   let spruceLogs = bot.inventory.items().find(i => i.name === 'spruce_log');
   let currentLogs = spruceLogs ? spruceLogs.count : 0;
   if (currentLogs < 3) {
-    // If we don't have enough logs, mine them. 
-    // mineBlock will handle finding and moving to the logs.
     await mineBlock('spruce_log', 3 - currentLogs);
   }
 
-  // 2. Move to the specific crafting table location provided in the task
+  // 2. Move to the specific crafting table location
   await moveTo(tablePos.x, tablePos.y, tablePos.z, 3, 120);
 
-  // 3. Verify if the crafting table exists at the target location
-  let tableBlock = bot.findBlock({
-    matching: b => b.name === 'crafting_table',
-    maxDistance: 32
-  });
-
-  // 4. Craft 12 spruce planks
-  // craftItem will automatically use a nearby crafting table if required.
+  // 3. Craft 12 spruce planks
+  // craftItem will handle using the crafting table if it's nearby.
   await craftItem('spruce_planks', 12);
 }
