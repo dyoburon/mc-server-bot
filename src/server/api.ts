@@ -12,6 +12,7 @@ import { MissionManager } from '../control/MissionManager';
 import { MarkerStore } from '../control/MarkerStore';
 import { SquadManager } from '../control/SquadManager';
 import { RoleManager } from '../control/RoleManager';
+import { CommanderService } from '../control/CommanderService';
 import { BuildCoordinator } from '../build/BuildCoordinator';
 import { ChainCoordinator } from '../supplychain/ChainCoordinator';
 import { logger } from '../util/logger';
@@ -28,6 +29,7 @@ export interface APIServerResult {
   markerStore: MarkerStore;
   squadManager: SquadManager;
   roleManager: RoleManager;
+  commanderService: CommanderService;
 }
 
 export function createAPIServer(botManager: BotManager): APIServerResult {
@@ -858,5 +860,42 @@ export function createAPIServer(botManager: BotManager): APIServerResult {
     res.json({ success: true });
   });
 
-  return { app, httpServer, io, eventLog, commandCenter, missionManager, buildCoordinator, chainCoordinator, markerStore, squadManager, roleManager };
+  // ═══════════════════════════════════════
+  //  CONTROL PLATFORM - COMMANDER ENDPOINTS
+  // ═══════════════════════════════════════
+
+  const commanderService = new CommanderService({
+    llmClient: botManager.getLLMClient?.() ?? null,
+    botManager, commandCenter, missionManager, markerStore,
+  });
+
+  app.post('/api/commander/parse', async (req: Request, res: Response) => {
+    const { input } = req.body;
+    if (!input || typeof input !== 'string' || !input.trim()) {
+      res.status(400).json({ error: 'input is required' }); return;
+    }
+    try {
+      const plan = await commanderService.parse(input.trim());
+      res.json({ plan });
+    } catch (err: any) {
+      logger.error({ err }, 'Commander parse failed');
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/commander/execute', async (req: Request, res: Response) => {
+    const { planId } = req.body;
+    if (!planId) { res.status(400).json({ error: 'planId is required' }); return; }
+    const plan = commanderService.getPlan(planId);
+    if (!plan) { res.status(404).json({ error: 'Plan not found' }); return; }
+    try {
+      const result = await commanderService.execute(planId);
+      res.json(result);
+    } catch (err: any) {
+      logger.error({ err }, 'Commander execute failed');
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  return { app, httpServer, io, eventLog, commandCenter, missionManager, buildCoordinator, chainCoordinator, markerStore, squadManager, roleManager, commanderService };
 }

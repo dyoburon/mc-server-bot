@@ -61,3 +61,29 @@ export const COMMAND_EVENTS = {
   FAILED: 'command:failed',
   CANCELLED: 'command:cancelled',
 } as const;
+
+// Commander plan types
+export interface CommanderPlanCommand {
+  type: CommandType;
+  targets: string[];
+  payload: Record<string, any>;
+}
+
+export interface CommanderPlanMission {
+  type: string;
+  title: string;
+  description?: string;
+  assigneeIds: string[];
+}
+
+export interface CommanderPlan {
+  id: string;
+  input: string;
+  intent: string;
+  confidence: number;
+  warnings: string[];
+  requiresConfirmation: boolean;
+  commands: CommanderPlanCommand[];
+  missions: CommanderPlanMission[];
+  createdAt: string;
+}
