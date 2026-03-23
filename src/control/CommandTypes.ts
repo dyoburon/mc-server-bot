@@ -1,6 +1,6 @@
-// Command types for the control platform
-
-import type { MissionRecord } from './MissionTypes';
+// ═══════════════════════════════════════
+//  COMMAND TYPES FOR CONTROL PLATFORM
+// ═══════════════════════════════════════
 
 export type CommandType =
   | 'pause_voyager'
@@ -17,49 +17,43 @@ export type CommandType =
   | 'equip_best'
   | 'unstuck';
 
-export type CommandScope = 'bot' | 'squad' | 'selection';
+export type CommandScope = 'single' | 'squad' | 'selection' | 'all';
 
-export type CommandPriority = 'low' | 'normal' | 'high' | 'urgent';
+export type CommandPriority = 'low' | 'normal' | 'high' | 'critical';
 
-export type CommandSource = 'dashboard' | 'map' | 'role' | 'routine' | 'commander' | 'api';
+export type CommandSource = 'dashboard' | 'api' | 'hotkey' | 'automated';
 
-export type CommandStatus = 'queued' | 'started' | 'succeeded' | 'failed' | 'cancelled';
+export type CommandStatus =
+  | 'queued'
+  | 'started'
+  | 'succeeded'
+  | 'failed'
+  | 'cancelled';
 
 export interface CommandError {
   code: string;
   message: string;
-  retryable?: boolean;
+  botName?: string;
 }
 
 export interface CommandRecord {
   id: string;
   type: CommandType;
   scope: CommandScope;
-  targets: string[];
-  payload: Record<string, unknown>;
   priority: CommandPriority;
   source: CommandSource;
-  requestedBy?: string;
   status: CommandStatus;
-  createdAt: number;
-  startedAt?: number;
-  completedAt?: number;
-  result?: Record<string, unknown>;
+  targets: string[];            // bot names
+  params: Record<string, any>;  // type-specific parameters
+  createdAt: string;            // ISO timestamp
+  startedAt?: string;
+  completedAt?: string;
   error?: CommandError;
+  result?: Record<string, any>;
+  childCommandIds?: string[];   // for fan-out commands
+  parentCommandId?: string;
 }
 
-export interface CommanderPlan {
-  id: string;
-  input: string;
-  parsedIntent: string;
-  confidence: number;
-  requiresConfirmation: boolean;
-  warnings: string[];
-  commands: CommandRecord[];
-  missions: MissionRecord[];
-}
-
-// Socket event names
 export const COMMAND_EVENTS = {
   QUEUED: 'command:queued',
   STARTED: 'command:started',
