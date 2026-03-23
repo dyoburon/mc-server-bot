@@ -7,6 +7,8 @@ import { logger } from '../util/logger';
 import { LLMClient } from '../ai/LLMClient';
 import { AffinityManager } from '../personality/AffinityManager';
 import { ConversationManager } from '../personality/ConversationManager';
+import { SocialMemory } from '../social/SocialMemory';
+import { BotComms } from '../social/BotComms';
 import { BlackboardManager } from '../voyager/BlackboardManager';
 
 interface SavedBot {
@@ -23,6 +25,8 @@ export class BotManager {
   private llmClient: LLMClient | null;
   private affinityManager: AffinityManager;
   private conversationManager: ConversationManager;
+  private socialMemory: SocialMemory;
+  private botComms: BotComms;
   private blackboardManager: BlackboardManager;
 
   constructor(config: Config, llmClient: LLMClient | null) {
@@ -31,6 +35,8 @@ export class BotManager {
     this.llmClient = llmClient;
     this.affinityManager = new AffinityManager(config.affinity, path.join(process.cwd(), 'data'));
     this.conversationManager = new ConversationManager();
+    this.socialMemory = new SocialMemory();
+    this.botComms = new BotComms();
     this.blackboardManager = new BlackboardManager(path.join(process.cwd(), 'data'));
   }
 
@@ -55,6 +61,20 @@ export class BotManager {
     const effectiveMode = mode || this.config.bots.defaultMode;
     const botMode = effectiveMode === 'codegen' ? BotMode.CODEGEN : BotMode.PRIMITIVE;
 
+    // Whitelist and OP the new bot using an already-connected bot
+    const connectedBot = this.getAllBots().find((b) => b.bot);
+    if (connectedBot?.bot) {
+      try {
+        connectedBot.bot.chat(`/whitelist add ${name}`);
+        await new Promise((r) => setTimeout(r, 500));
+        connectedBot.bot.chat(`/op ${name}`);
+        logger.info({ bot: name, via: connectedBot.name }, 'Whitelisted and OP\'d new bot');
+        await new Promise((r) => setTimeout(r, 1000));
+      } catch (e) {
+        logger.warn({ bot: name }, 'Failed to whitelist/OP bot — may need manual setup');
+      }
+    }
+
     const instance = new BotInstance({
       name,
       personality,
@@ -64,6 +84,9 @@ export class BotManager {
       llmClient: this.llmClient,
       affinityManager: this.affinityManager,
       conversationManager: this.conversationManager,
+      socialMemory: this.socialMemory,
+      botComms: this.botComms,
+      botManager: this,
       blackboardManager: this.blackboardManager,
       onSwarmDirective: (description, requestedBy) => this.handleSwarmDirective(description, requestedBy),
     });
@@ -124,8 +147,35 @@ export class BotManager {
     return this.conversationManager;
   }
 
+  getSocialMemory(): SocialMemory {
+    return this.socialMemory;
+  }
+
+  getBotComms(): BotComms {
+    return this.botComms;
+  }
+
+  getNearbyBotInfo(botName: string, radius: number = 64): { name: string; personality: string; activity: string }[] {
+    const bot = this.getBot(botName);
+    if (!bot?.bot?.entity) return [];
+    const botPos = bot.bot.entity.position;
+
+    return this.getAllBots()
+      .filter(b => b.name !== botName && b.bot?.entity)
+      .filter(b => b.bot!.entity.position.distanceTo(botPos) <= radius)
+      .map(b => ({
+        name: b.name,
+        personality: b.personality,
+        activity: b.getVoyagerLoop()?.getCurrentTask() || 'idle',
+      }));
+  }
+
   getBlackboardManager(): BlackboardManager {
     return this.blackboardManager;
+  }
+
+  getLLMClient(): LLMClient | null {
+    return this.llmClient;
   }
 
   async handleSwarmDirective(description: string, requestedBy: string): Promise<void> {

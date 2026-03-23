@@ -16,6 +16,9 @@ import { VoyagerLoop } from '../voyager/VoyagerLoop';
 import { StatsTracker } from '../voyager/StatsTracker';
 import { renderObservation } from '../voyager/Observation';
 import { PERSONALITIES } from '../personality/PersonalityType';
+import { SocialMemory } from '../social/SocialMemory';
+import { BotComms, BotMessage } from '../social/BotComms';
+import type { BotManager } from './BotManager';
 import { BlackboardManager } from '../voyager/BlackboardManager';
 
 export interface BotOptions {
@@ -27,6 +30,9 @@ export interface BotOptions {
   llmClient: LLMClient | null;
   affinityManager: AffinityManager;
   conversationManager: ConversationManager;
+  socialMemory: SocialMemory;
+  botComms: BotComms;
+  botManager: BotManager;
   blackboardManager: BlackboardManager;
   onSwarmDirective?: (description: string, requestedBy: string) => Promise<void> | void;
 }
@@ -54,6 +60,9 @@ export class BotInstance {
   private blackboardManager: BlackboardManager;
   private onSwarmDirective?: (description: string, requestedBy: string) => Promise<void> | void;
   private chatCooldowns: Map<string, number> = new Map();
+  private socialMemory: SocialMemory;
+  private botComms: BotComms;
+  private botManager: BotManager;
   private voyagerLoop: VoyagerLoop | null = null;
   private instinctInterval: NodeJS.Timeout | null = null;
   private instinctResumeTimeout: NodeJS.Timeout | null = null;
@@ -76,6 +85,9 @@ export class BotInstance {
     this.llmClient = options.llmClient;
     this.affinityManager = options.affinityManager;
     this.conversationManager = options.conversationManager;
+    this.socialMemory = options.socialMemory;
+    this.botComms = options.botComms;
+    this.botManager = options.botManager;
     this.blackboardManager = options.blackboardManager;
     this.onSwarmDirective = options.onSwarmDirective;
   }
@@ -161,6 +173,32 @@ export class BotInstance {
             this.startWandering(); // Voyager owns movement in codegen mode
           }
           this.startChatListener();
+          // Debug: log all raw messages to diagnose chat issues
+          this.bot!.on('message', (jsonMsg: any) => {
+            const text = jsonMsg.toString();
+            if (text && !text.includes('Chunk size') && text.trim().length > 0) {
+              logger.debug({ bot: this.name, rawMessage: text }, 'Raw message received');
+            }
+          });
+
+          // Listen for inter-bot messages
+          this.botComms.registerListener(this.name, (msg: BotMessage) => {
+            logger.info({ bot: this.name, from: msg.from, content: msg.content }, 'Received bot message');
+            this.socialMemory.addMemory(this.name, 'social',
+              `${msg.from} sent me a message: "${msg.content.substring(0, 80)}"`,
+              [msg.from], 5
+            );
+          });
+
+          // Periodic reflection every 10 minutes
+          setInterval(() => {
+            const recent = this.socialMemory.getRecentMemories(this.name, 10);
+            if (recent.length >= 5) {
+              this.socialMemory.reflect(this.name, recent);
+            }
+          }, 600000);
+
+          this.scheduleAmbientChat();
           this.startVoyagerIfCodegen();
         });
       });
@@ -259,7 +297,7 @@ export class BotInstance {
       logger.warn({ bot: this.name, reason }, 'Bot was kicked');
       this.state = BotState.DISCONNECTED;
       this.stopAmbientBehaviors();
-      this.scheduleReconnect();
+      // 'end' will also fire after kick — let 'end' handle reconnect
     });
 
     this.bot.on('end', (reason) => {
@@ -273,11 +311,24 @@ export class BotInstance {
 
   private static BOT_PASSWORD = 'dyobot2026';
 
+  // Map bot personality to server class (hotbar slot)
+  // Classes: Warrior=0, Mage=1, Archer=2, Tank=3
+  private static CLASS_MAP: Record<string, { slot: number; name: string }> = {
+    guard:      { slot: 3, name: 'Tank' },
+    blacksmith: { slot: 0, name: 'Warrior' },
+    explorer:   { slot: 2, name: 'Archer' },
+    elder:      { slot: 1, name: 'Mage' },
+    merchant:   { slot: 2, name: 'Archer' },
+    farmer:     { slot: 0, name: 'Warrior' },
+    builder:    { slot: 3, name: 'Tank' },
+  };
+
   private handleAuth(onReady: () => void): void {
     if (!this.bot) return;
 
     const bot = this.bot;
     let authDone = false;
+    let classSelected = false;
 
     const finish = () => {
       if (authDone) return;
@@ -287,12 +338,38 @@ export class BotInstance {
       onReady();
     };
 
+    const selectClass = () => {
+      if (classSelected) return;
+      classSelected = true;
+      const mapping = BotInstance.CLASS_MAP[this.personality] || { slot: 0, name: 'Warrior' };
+      logger.info({ bot: this.name, class: mapping.name, slot: mapping.slot }, 'Selecting class');
+      try {
+        bot.setQuickBarSlot(mapping.slot);
+        setTimeout(() => {
+          try {
+            bot.activateItem();
+            logger.info({ bot: this.name, class: mapping.name }, 'Class selected via activateItem');
+          } catch (e) {
+            logger.debug({ bot: this.name, err: String(e) }, 'activateItem failed, trying swingArm');
+            try { bot.swingArm('right'); } catch {}
+          }
+        }, 500);
+      } catch (e) {
+        logger.warn({ bot: this.name, err: String(e) }, 'Class selection failed');
+      }
+    };
+
     const onMessage = (jsonMsg: any) => {
       if (authDone) return;
       const msg = jsonMsg.toString();
+      if (msg.trim()) {
+        logger.info({ bot: this.name, authMsg: msg.substring(0, 200) }, 'Auth phase message');
+      }
 
+      // Auth login/register flow
       if (msg.includes('Registered successfully') || msg.includes('Logged in successfully') || msg.includes('already logged in')) {
-        finish();
+        // Don't finish yet — class selection may follow
+        logger.info({ bot: this.name }, 'Login successful, waiting for class selection');
       } else if (msg.includes('already registered') || msg.includes('Please log in')) {
         logger.info({ bot: this.name }, 'Already registered, logging in');
         bot.chat(`/login ${BotInstance.BOT_PASSWORD}`);
@@ -300,33 +377,57 @@ export class BotInstance {
         logger.info({ bot: this.name }, 'Registering with DyoAuth');
         bot.chat(`/register ${BotInstance.BOT_PASSWORD} ${BotInstance.BOT_PASSWORD}`);
       }
+
+      // Class selection flow
+      if (msg.includes('Choose your class') || msg.includes('choose your class')) {
+        logger.info({ bot: this.name }, 'Class selection prompt detected');
+        setTimeout(() => selectClass(), 1000);
+      } else if (msg.includes('Please select a class')) {
+        logger.info({ bot: this.name }, 'Class reminder, retrying selection');
+        classSelected = false; // Allow retry
+        setTimeout(() => selectClass(), 500);
+      } else if (msg.includes('You are now a') || msg.includes('Class selected') || msg.includes('you have selected')) {
+        logger.info({ bot: this.name }, 'Class confirmed, auth complete');
+        finish();
+      }
     };
 
     bot.on('message', onMessage);
 
-    // Proactively try login after 1s, then register after 3s (in case message events were missed)
+    // Proactively try login after 2s (in case message event was missed)
     setTimeout(() => {
-      if (!authDone && bot) {
-        logger.info({ bot: this.name }, 'Proactively trying /login');
-        bot.chat(`/login ${BotInstance.BOT_PASSWORD}`);
+      if (!authDone && bot && typeof bot.chat === 'function') {
+        try {
+          logger.info({ bot: this.name }, 'Proactively trying /login');
+          bot.chat(`/login ${BotInstance.BOT_PASSWORD}`);
+        } catch (e) {
+          logger.debug({ bot: this.name, err: String(e) }, 'Proactive login failed');
+        }
       }
-    }, 1000);
+    }, 2000);
 
+    // Try /register at 4s if still not authed
     setTimeout(() => {
-      if (!authDone && bot) {
-        logger.info({ bot: this.name }, 'Proactively trying /register');
-        bot.chat(`/register ${BotInstance.BOT_PASSWORD} ${BotInstance.BOT_PASSWORD}`);
+      if (!authDone && bot && typeof bot.chat === 'function') {
+        try {
+          logger.info({ bot: this.name }, 'Proactively trying /register');
+          bot.chat(`/register ${BotInstance.BOT_PASSWORD} ${BotInstance.BOT_PASSWORD}`);
+        } catch (e) {
+          logger.debug({ bot: this.name, err: String(e) }, 'Proactive register failed');
+        }
       }
-    }, 3000);
+    }, 4000);
 
-    // Timeout fallback
+    // Timeout fallback — finish even if class wasn't confirmed
     setTimeout(() => {
       if (!authDone) {
         logger.warn({ bot: this.name }, 'Auth timeout, proceeding anyway');
         finish();
       }
-    }, 15000);
+    }, 20000);
   }
+
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Maps personality to the class hotbar slot (DyoClasses puts icons in slots 2-5)
   private static PERSONALITY_CLASS_MAP: Record<string, { slot: number; className: string }> = {
@@ -405,10 +506,7 @@ export class BotInstance {
 
   private scheduleReconnect(): void {
     if (this.destroyed) return;
-    if (this.pendingConnectTimeout) {
-      logger.debug({ bot: this.name }, 'Reconnect already queued, skipping duplicate schedule');
-      return;
-    }
+    if (this.reconnectTimer) return; // Already scheduled
     if (this.reconnectAttempts >= this.config.bots.maxReconnectAttempts) {
       logger.error({ bot: this.name }, 'Max reconnect attempts reached');
       return;
@@ -416,13 +514,13 @@ export class BotInstance {
 
     const delay = Math.min(
       this.config.bots.reconnectDelaySec * Math.pow(2, this.reconnectAttempts) * 1000,
-      30000
+      60000
     );
     this.reconnectAttempts++;
 
     logger.info({ bot: this.name, delay, attempt: this.reconnectAttempts }, 'Scheduling reconnect');
-    this.pendingConnectTimeout = setTimeout(() => {
-      this.pendingConnectTimeout = null;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
       void this.connect();
     }, delay);
   }
@@ -439,7 +537,7 @@ export class BotInstance {
     if (this.headTrackingInterval) return;
 
     this.headTrackingInterval = setInterval(() => {
-      if (!this.bot || this.state === BotState.DISCONNECTED) return;
+      if (!this.bot || this.state === BotState.DISCONNECTED || !this.bot.players || !this.bot.entity) return;
       if (this.mode === BotMode.CODEGEN && this.voyagerLoop?.getCurrentTask()) return;
       if (this.state === BotState.EXECUTING_TASK) return;
 
@@ -510,11 +608,22 @@ export class BotInstance {
       // Ignore own messages and empty messages
       if (!this.bot || username === this.bot.username || !message.trim()) return;
 
+      logger.info({ bot: this.name, from: username, message }, 'Chat received');
+
+      // Check if the chatting player is actually another bot
+      const otherBot = this.botManager.getBot(username);
+      if (otherBot) {
+        this.botComms.sendMessage(username, this.name, message, 'chat');
+      }
+
       // Check if player is within conversation radius
       const player = this.bot.players[username];
-      if (!player?.entity) return;
-      if (username.toLowerCase() !== BotInstance.OWNER_PLAYER.toLowerCase()) return;
+      if (!player?.entity) {
+        logger.debug({ bot: this.name, from: username, hasPlayer: !!player, hasEntity: !!player?.entity }, 'Chat ignored: no player entity');
+        return;
+      }
 
+      // Handle swarm directives from owner
       const swarmMatch = message.match(/^swarm:\s*(.+)$/i);
       if (swarmMatch && this.onSwarmDirective) {
         const directive = swarmMatch[1].trim();
@@ -525,7 +634,10 @@ export class BotInstance {
       }
 
       const dist = player.entity.position.distanceTo(this.bot.entity.position);
-      if (dist > this.config.behavior.conversationRadius) return;
+      if (dist > this.config.behavior.conversationRadius) {
+        logger.debug({ bot: this.name, from: username, dist, radius: this.config.behavior.conversationRadius }, 'Chat ignored: out of range');
+        return;
+      }
 
       // Rate limit per player
       const now = Date.now();
@@ -636,7 +748,17 @@ export class BotInstance {
       const affinity = this.affinityManager.get(this.name, playerName);
       const isCodegen = this.mode === BotMode.CODEGEN;
       const internalState = this.voyagerLoop?.getInternalState();
-      const systemPrompt = buildSystemPrompt(this.name, this.personality, affinity, isCodegen, internalState);
+
+      // Build social context for enhanced prompts
+      const memoryContext = this.socialMemory.buildMemoryContext(this.name, [playerName]);
+      const emotionalState = this.socialMemory.getEmotionalState(this.name);
+      const relationshipSummary = this.affinityManager.getRelationshipSummary(this.name, playerName);
+      const nearbyBots = this.botManager.getNearbyBotInfo(this.name);
+
+      const systemPrompt = buildSystemPrompt(
+        this.name, this.personality, affinity, isCodegen, internalState,
+        { nearbyBots, memoryContext, emotionalState, relationshipSummary }
+      );
 
       // Build conversation history (current message appended by buildContentsArray)
       const contents = this.conversationManager.buildContentsArray(this.name, playerName, message);
@@ -676,6 +798,16 @@ export class BotInstance {
         'Chat response sent'
       );
 
+      // Record memory of this interaction
+      this.socialMemory.addMemory(this.name, 'social',
+        `${playerName} said: "${message.substring(0, 50)}". I responded about ${flatText.substring(0, 50)}`,
+        [playerName],
+        sentiment === 'POSITIVE' ? 6 : sentiment === 'NEGATIVE' ? 7 : 4
+      );
+      this.socialMemory.updateEmotionalState(this.name,
+        sentiment === 'POSITIVE' ? 'positive_chat' : sentiment === 'NEGATIVE' ? 'negative_chat' : 'social_interaction'
+      );
+
       // Queue task in Voyager loop if extracted
       if (goalDescription && this.voyagerLoop) {
         logger.info({ bot: this.name, player: playerName, goal: goalDescription }, 'Long-term goal extracted from chat');
@@ -708,6 +840,10 @@ export class BotInstance {
       }
 
       // Find nearest player within conversation radius
+      if (!this.bot.players || !this.bot.entity) {
+        this.scheduleAmbientChat();
+        return;
+      }
       const players = Object.values(this.bot.players).filter(
         (p) => p.entity && p.username !== this.bot!.username
       );
@@ -765,6 +901,17 @@ export class BotInstance {
       this.llmClient
     );
     this.voyagerLoop.setBlackboardManager(this.blackboardManager);
+
+    // Wire social memory into task lifecycle
+    this.voyagerLoop.onTaskSuccess = (taskDescription: string) => {
+      this.socialMemory.addMemory(this.name, 'event', `Successfully completed: ${taskDescription}`, [], 5);
+      this.socialMemory.updateEmotionalState(this.name, 'task_success');
+    };
+    this.voyagerLoop.onTaskFailure = (taskDescription: string) => {
+      this.socialMemory.addMemory(this.name, 'event', `Failed task: ${taskDescription}`, [], 4);
+      this.socialMemory.updateEmotionalState(this.name, 'task_failure');
+    };
+
     this.voyagerLoop.start();
   }
 
@@ -1190,6 +1337,8 @@ export class BotInstance {
             isPaused: this.voyagerLoop.isPaused(),
             currentTask: this.voyagerLoop.getCurrentTask(),
             queuedTasks: this.voyagerLoop.getQueuedTasks().length,
+            queuedTaskCount: this.voyagerLoop.getQueueLength(),
+            queuedTaskPreviews: this.voyagerLoop.getQueuedTasksDetailed().slice(0, 5),
             lastExecution: this.voyagerLoop.getLastExecutionMetrics(),
           }
         : null,
