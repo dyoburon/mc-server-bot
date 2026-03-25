@@ -2,16 +2,8 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { api } from '@/lib/api';
-
-interface Mission {
-  id: string;
-  title: string;
-  type: string;
-  priority: number;
-  status: 'running' | 'queued' | 'completed' | 'failed' | 'cancelled';
-  createdAt: number;
-}
+import { api, type MissionRecord } from '@/lib/api';
+import { useMissionStore } from '@/lib/store';
 
 const STATUS_COLORS: Record<string, string> = {
   running: '#3B82F6',
@@ -19,15 +11,17 @@ const STATUS_COLORS: Record<string, string> = {
   completed: '#10B981',
   failed: '#EF4444',
   cancelled: '#6B7280',
+  paused: '#A1A1AA',
+  draft: '#6B7280',
 };
 
 const TYPE_COLORS: Record<string, string> = {
-  task: '#8B5CF6',
-  build: '#3B82F6',
-  gather: '#10B981',
-  explore: '#F59E0B',
-  combat: '#EF4444',
-  craft: '#EC4899',
+  queue_task: '#8B5CF6',
+  build_schematic: '#3B82F6',
+  gather_items: '#10B981',
+  patrol_zone: '#F59E0B',
+  craft_items: '#EC4899',
+  supply_chain: '#06B6D4',
   default: '#6B7280',
 };
 
@@ -47,66 +41,81 @@ interface Props {
 }
 
 export function MissionQueuePanel({ botName }: Props) {
-  const [missions, setMissions] = useState<Mission[]>([]);
+  const missionStore = useMissionStore((s) => s.missions);
+  const setMissions = useMissionStore((s) => s.setMissions);
+  const upsertMission = useMissionStore((s) => s.upsertMission);
+  const [queueMissionIds, setQueueMissionIds] = useState<string[]>([]);
+  const [queueMissionMap, setQueueMissionMap] = useState<Record<string, MissionRecord>>({});
   const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   const fetchMissions = useCallback(async () => {
+    setLoading(true);
     try {
-      // Try the mission queue endpoint; fall back to constructing from voyager task data
-      const data = await api.getBotMissionQueue(botName);
-      setMissions(data.missions as unknown as Mission[]);
+      const [queueData, missionData] = await Promise.all([
+        api.getBotMissionQueue(botName),
+        api.getMissions({ bot: botName, limit: 50 }),
+      ]);
+      setQueueMissionIds(queueData.missions.map((mission) => mission.id));
+      setQueueMissionMap(Object.fromEntries(queueData.missions.map((mission) => [mission.id, mission])));
+      setMissions(missionData.missions);
     } catch {
-      // Fallback: build mission list from voyager task info
-      try {
-        const taskData = await api.getBotTasks(botName);
-        const built: Mission[] = [];
-        if (taskData.currentTask) {
-          built.push({
-            id: 'current',
-            title: taskData.currentTask,
-            type: 'task',
-            priority: 1,
-            status: 'running',
-            createdAt: Date.now(),
-          });
-        }
-        taskData.completedTasks.slice(-5).reverse().forEach((t, i) => {
-          built.push({
-            id: `completed-${i}`,
-            title: t,
-            type: 'task',
-            priority: 0,
-            status: 'completed',
-            createdAt: Date.now() - (i + 1) * 60000,
-          });
-        });
-        taskData.failedTasks.slice(-3).reverse().forEach((t, i) => {
-          built.push({
-            id: `failed-${i}`,
-            title: t,
-            type: 'task',
-            priority: 0,
-            status: 'failed',
-            createdAt: Date.now() - (i + 1) * 120000,
-          });
-        });
-        setMissions(built);
-      } catch {
-        setMissions([]);
-      }
+      setQueueMissionIds([]);
+      setQueueMissionMap({});
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  }, [botName]);
+  }, [botName, setMissions]);
 
   useEffect(() => {
-    fetchMissions();
-    const interval = setInterval(fetchMissions, 5000);
-    return () => clearInterval(interval);
+    void fetchMissions();
   }, [fetchMissions]);
 
-  const runningMission = missions.find((m) => m.status === 'running');
-  const queuedMissions = missions.filter((m) => m.status === 'queued');
-  const recentMissions = missions.filter((m) => m.status === 'completed' || m.status === 'failed' || m.status === 'cancelled');
+  const botMissions = missionStore.filter((mission) =>
+    mission.assigneeIds.some((id) => id.toLowerCase() === botName.toLowerCase()),
+  );
+
+  const runningMission = botMissions.find((mission) => mission.status === 'running');
+  const queuedMissions = queueMissionIds
+    .map((id) => queueMissionMap[id] ?? botMissions.find((mission) => mission.id === id))
+    .filter((mission): mission is MissionRecord => Boolean(mission))
+    .filter((mission) => mission.status === 'queued');
+  const recentMissions = botMissions.filter((mission) =>
+    mission.status === 'completed' || mission.status === 'failed' || mission.status === 'cancelled',
+  );
+
+  const handleCancelMission = useCallback(async (missionId: string) => {
+    setActionLoading(`cancel-${missionId}`);
+    try {
+      const result = await api.cancelMission(missionId);
+      upsertMission(result.mission);
+      await fetchMissions();
+    } finally {
+      setActionLoading(null);
+    }
+  }, [fetchMissions, upsertMission]);
+
+  const handleRetryMission = useCallback(async (missionId: string) => {
+    setActionLoading(`retry-${missionId}`);
+    try {
+      const result = await api.retryMission(missionId);
+      upsertMission(result.mission);
+      await fetchMissions();
+    } finally {
+      setActionLoading(null);
+    }
+  }, [fetchMissions, upsertMission]);
+
+  const handleReorderMission = useCallback(async (fromIndex: number, toIndex: number) => {
+    if (toIndex < 0 || toIndex >= queueMissionIds.length) return;
+    setActionLoading(`reorder-${fromIndex}-${toIndex}`);
+    try {
+      await api.updateBotMissionQueue(botName, { action: 'reorder', fromIndex, toIndex });
+      await fetchMissions();
+    } finally {
+      setActionLoading(null);
+    }
+  }, [botName, fetchMissions, queueMissionIds.length]);
 
   return (
     <motion.div
@@ -129,28 +138,46 @@ export function MissionQueuePanel({ botName }: Props) {
         <div className="flex items-center justify-center py-6">
           <div className="w-5 h-5 border-2 border-zinc-700 border-t-zinc-400 rounded-full animate-spin" />
         </div>
-      ) : missions.length === 0 ? (
+      ) : botMissions.length === 0 ? (
         <p className="text-xs text-zinc-600 text-center py-4">No missions in queue</p>
       ) : (
         <div className="space-y-2">
-          {/* Running Mission */}
           {runningMission && (
-            <MissionItem mission={runningMission} isActive />
+            <MissionItem
+              mission={runningMission}
+              isActive
+              loading={actionLoading}
+              onCancel={() => handleCancelMission(runningMission.id)}
+            />
           )}
 
-          {/* Queued Missions */}
           <AnimatePresence>
             {queuedMissions.map((mission, index) => (
-              <MissionItem key={mission.id} mission={mission} index={index} showReorder={queuedMissions.length > 1} />
+              <MissionItem
+                key={mission.id}
+                mission={mission}
+                index={index}
+                queueLength={queuedMissions.length}
+                showReorder={queuedMissions.length > 1}
+                loading={actionLoading}
+                onMoveUp={() => handleReorderMission(index, index - 1)}
+                onMoveDown={() => handleReorderMission(index, index + 1)}
+                onCancel={() => handleCancelMission(mission.id)}
+              />
             ))}
           </AnimatePresence>
 
-          {/* Recent completed/failed */}
           {recentMissions.length > 0 && (
             <div className="pt-2 border-t border-zinc-800/40">
               <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-1.5">Recent</p>
               {recentMissions.slice(0, 5).map((mission) => (
-                <MissionItem key={mission.id} mission={mission} compact />
+                <MissionItem
+                  key={mission.id}
+                  mission={mission}
+                  compact
+                  loading={actionLoading}
+                  onRetry={() => handleRetryMission(mission.id)}
+                />
               ))}
             </div>
           )}
@@ -166,12 +193,24 @@ function MissionItem({
   compact,
   index,
   showReorder,
+  queueLength,
+  loading,
+  onMoveUp,
+  onMoveDown,
+  onRetry,
+  onCancel,
 }: {
-  mission: Mission;
+  mission: MissionRecord;
   isActive?: boolean;
   compact?: boolean;
   index?: number;
   showReorder?: boolean;
+  queueLength?: number;
+  loading?: string | null;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
+  onRetry?: () => void;
+  onCancel?: () => void;
 }) {
   const statusColor = STATUS_COLORS[mission.status] || '#6B7280';
   const typeColor = TYPE_COLORS[mission.type] || TYPE_COLORS.default;
@@ -179,11 +218,13 @@ function MissionItem({
   if (compact) {
     return (
       <div className="flex items-center gap-2 py-1 px-1 rounded hover:bg-zinc-800/30 transition-colors">
-        <span
-          className="w-1.5 h-1.5 rounded-full shrink-0"
-          style={{ backgroundColor: statusColor }}
-        />
+        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: statusColor }} />
         <span className="text-[11px] text-zinc-500 truncate flex-1">{mission.title}</span>
+        {mission.status === 'failed' && onRetry && (
+          <ActionBtn title="Retry" color="#F59E0B" disabled={loading !== null} onClick={onRetry}>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M1 4v6h6" /><path d="M23 20v-6h-6" /><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15" /></svg>
+          </ActionBtn>
+        )}
         <span className="text-[9px] text-zinc-600 shrink-0">{formatTimeAgo(mission.createdAt)}</span>
       </div>
     );
@@ -202,65 +243,51 @@ function MissionItem({
       }`}
     >
       <div className="flex items-start gap-2">
-        {/* Status indicator */}
         <div className="mt-1 shrink-0">
           {isActive ? (
             <span className="relative flex h-2.5 w-2.5">
-              <span
-                className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
-                style={{ backgroundColor: statusColor }}
-              />
-              <span
-                className="relative inline-flex rounded-full h-2.5 w-2.5"
-                style={{ backgroundColor: statusColor }}
-              />
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ backgroundColor: statusColor }} />
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5" style={{ backgroundColor: statusColor }} />
             </span>
           ) : (
-            <span
-              className="block w-2 h-2 rounded-full"
-              style={{ backgroundColor: statusColor }}
-            />
+            <span className="block w-2 h-2 rounded-full" style={{ backgroundColor: statusColor }} />
           )}
         </div>
 
-        {/* Content */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-0.5">
             <span className="text-xs text-zinc-300 font-medium truncate">{mission.title}</span>
           </div>
           <div className="flex items-center gap-2">
-            <span
-              className="text-[9px] font-medium px-1.5 py-0.5 rounded uppercase"
-              style={{ color: typeColor, backgroundColor: `${typeColor}15` }}
-            >
+            <span className="text-[9px] font-medium px-1.5 py-0.5 rounded uppercase" style={{ color: typeColor, backgroundColor: `${typeColor}15` }}>
               {mission.type}
             </span>
-            {mission.priority > 0 && (
-              <span className="text-[9px] text-amber-500/70">P{mission.priority}</span>
-            )}
+            <span className="text-[9px] text-amber-500/70 uppercase">{mission.priority}</span>
             <span className="text-[9px] text-zinc-600">{formatTimeAgo(mission.createdAt)}</span>
           </div>
+          {mission.blockedReason && (
+            <p className="text-[10px] text-amber-400/80 mt-1 truncate">{mission.blockedReason}</p>
+          )}
         </div>
 
-        {/* Actions */}
         <div className="flex items-center gap-1 shrink-0">
           {showReorder && typeof index === 'number' && (
             <>
-              <ActionBtn title="Move up" disabled={index === 0}>
+              <ActionBtn title="Move up" disabled={index === 0 || !onMoveUp || loading !== null} onClick={onMoveUp}>
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 15l-6-6-6 6" /></svg>
               </ActionBtn>
-              <ActionBtn title="Move down">
+              <ActionBtn title="Move down" disabled={index === (queueLength ?? 1) - 1 || !onMoveDown || loading !== null} onClick={onMoveDown}>
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M6 9l6 6 6-6" /></svg>
               </ActionBtn>
             </>
           )}
-          {mission.status === 'failed' && (
-            <ActionBtn title="Retry" color="#F59E0B">
+          {mission.status === 'failed' && onRetry && (
+            <ActionBtn title="Retry" color="#F59E0B" disabled={loading !== null} onClick={onRetry}>
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M1 4v6h6" /><path d="M23 20v-6h-6" /><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15" /></svg>
             </ActionBtn>
           )}
-          {(mission.status === 'running' || mission.status === 'queued') && (
-            <ActionBtn title="Cancel" color="#EF4444">
+          {(mission.status === 'running' || mission.status === 'queued') && onCancel && (
+            <ActionBtn title="Cancel" color="#EF4444" disabled={loading !== null} onClick={onCancel}>
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
             </ActionBtn>
           )}

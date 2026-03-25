@@ -87,6 +87,7 @@ export function createAPIServer(botManager: BotManager): APIServerResult {
   missionManager.setBuildCoordinator(buildCoordinator);
   missionManager.setChainCoordinator(chainCoordinator);
   missionManager.setSquadManager(squadManager);
+  roleManager.setMissionManager(missionManager);
 
   const commanderService = new CommanderService({
     llmClient: botManager.getLLMClient?.() ?? null,
@@ -511,7 +512,7 @@ export function createAPIServer(botManager: BotManager): APIServerResult {
 
   // Create and dispatch a command
   app.post('/api/commands', async (req: Request, res: Response) => {
-    const { type, scope, priority, source, targets, params } = req.body;
+    const { type, scope, priority, source, targets, params, payload } = req.body;
 
     if (!type || !targets || !Array.isArray(targets) || targets.length === 0) {
       res.status(400).json({ error: 'type and targets[] are required' });
@@ -521,11 +522,11 @@ export function createAPIServer(botManager: BotManager): APIServerResult {
     try {
       const command = commandCenter.createCommand({
         type: type as CommandType,
-        scope: scope ?? 'single',
-        priority: priority ?? 'normal',
+        scope: scope === 'bot' ? 'single' : (scope ?? 'single'),
+        priority: priority === 'urgent' ? 'critical' : (priority ?? 'normal'),
         source: source ?? 'dashboard',
         targets,
-        params: params ?? {},
+        params: params ?? payload ?? {},
       });
       const result = await commandCenter.dispatchCommand(command);
       const statusCode = result.status === 'succeeded' ? 200 : result.status === 'failed' ? 422 : 200;
@@ -757,7 +758,7 @@ export function createAPIServer(botManager: BotManager): APIServerResult {
     res.json({ missions, voyagerTasks });
   });
 
-  // Reorder/remove from bot's VoyagerLoop queue
+  // Reorder/remove from bot mission queue
   app.patch('/api/bots/:name/mission-queue', (req: Request, res: Response) => {
     const name = req.params.name as string;
     const bot = botManager.getBot(name);
@@ -770,8 +771,24 @@ export function createAPIServer(botManager: BotManager): APIServerResult {
       res.status(400).json({ error: 'Bot is not in codegen mode' });
       return;
     }
-    const { action, index, fromIndex, toIndex } = req.body;
+    const { action, missionId, index, fromIndex, toIndex } = req.body;
     let success = false;
+    if (action === 'remove' || action === 'reorder' || action === 'clear') {
+      success = missionManager.updateBotMissionQueue(
+        name,
+        action,
+        missionId,
+        typeof fromIndex === 'number' && typeof toIndex === 'number'
+          ? { from: fromIndex, to: toIndex }
+          : undefined,
+      );
+
+      if (success) {
+        res.json({ success: true });
+        return;
+      }
+    }
+
     switch (action) {
       case 'remove':
         success = typeof index === 'number' ? voyager.removeQueuedTask(index) : false;

@@ -21,7 +21,7 @@ export default function DashboardPage() {
 
   const selectedBotIds = useControlStore((s) => s.selectedBotIds);
   const clearSelection = useControlStore((s) => s.clearSelection);
-  const commands = useControlStore((s) => s.commands);
+  const commands = useControlStore((s) => s.commandHistory);
   const missions = useMissionStore((s) => s.missions);
 
   const [roleMap, setRoleMap] = useState<Record<string, RoleAssignmentRecord>>({});
@@ -43,7 +43,7 @@ export default function DashboardPage() {
 
     // Missions
     api.getMissions({ limit: 50 }).then((data) => {
-      useMissionStore.getState().setMissions(data.missions as any);
+        useMissionStore.getState().setMissions(data.missions);
     }).catch(() => {});
 
     // Roles

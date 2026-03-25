@@ -17,8 +17,10 @@ interface MapContextMenuProps {
   onClose: () => void;
   onWalkHere: (x: number, z: number) => void;
   onCreateMarker: (x: number, z: number) => void;
+  onCreateZone: (x: number, z: number) => void;
   onCopyCoords: (x: number, z: number) => void;
   onFollow: (targetName: string) => void;
+  onMoveToMarker: (marker: MarkerRecord) => void;
   onEditMarker: (marker: MarkerRecord) => void;
   onDeleteMarker: (marker: MarkerRecord) => void;
 }
@@ -31,8 +33,10 @@ export default function MapContextMenu({
   onClose,
   onWalkHere,
   onCreateMarker,
+  onCreateZone,
   onCopyCoords,
   onFollow,
+  onMoveToMarker,
   onEditMarker,
   onDeleteMarker,
 }: MapContextMenuProps) {
@@ -69,6 +73,10 @@ export default function MapContextMenu({
       onClick: () => { onCreateMarker(target.worldX, target.worldZ); onClose(); },
     });
     items.push({
+      label: 'Create Zone',
+      onClick: () => { onCreateZone(target.worldX, target.worldZ); onClose(); },
+    });
+    items.push({
       label: 'Copy Coordinates',
       onClick: () => { onCopyCoords(target.worldX, target.worldZ); onClose(); },
     });
@@ -89,8 +97,8 @@ export default function MapContextMenu({
     });
   } else if (target.type === 'marker') {
     items.push({
-      label: `Move Here${selectedBot ? '' : ' (select bot)'}`,
-      onClick: () => { onWalkHere(target.marker.position.x, target.marker.position.z); onClose(); },
+      label: `Move To Marker${selectedBot ? '' : ' (select bot)'}`,
+      onClick: () => { onMoveToMarker(target.marker); onClose(); },
       disabled: !selectedBot,
     });
     items.push({

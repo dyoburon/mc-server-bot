@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { api, type CommandType, type CommandRecord } from '@/lib/api';
-import { useBotStore, useControlStore } from '@/lib/store';
+import { useBotStore, useControlStore, useWorldStore } from '@/lib/store';
 
 interface Props {
   botName: string;
@@ -48,13 +48,19 @@ export function BotCommandCenter({ botName, state, voyagerPaused, voyagerRunning
   const [walkCoords, setWalkCoords] = useState('');
   const [showWalkInput, setShowWalkInput] = useState(false);
   const [showFollowInput, setShowFollowInput] = useState(false);
+  const [showMarkerInput, setShowMarkerInput] = useState(false);
+  const [showZoneInput, setShowZoneInput] = useState(false);
   const [feedback, setFeedback] = useState<{ msg: string; ok: boolean } | null>(null);
   const [lastCommandId, setLastCommandId] = useState<string | null>(null);
   const players = useBotStore((s) => s.playerList).filter((p) => p.isOnline);
+  const markers = useWorldStore((s) => s.markers);
+  const zones = useWorldStore((s) => s.zones);
 
   const pushCommand = useControlStore((s) => s.upsertCommand);
-  const recentCommands = useControlStore((s) =>
-    s.commandHistory.filter((c) => c.targets.includes(botName)).slice(0, 5)
+  const commandHistory = useControlStore((s) => s.commandHistory);
+  const recentCommands = useMemo(
+    () => commandHistory.filter((c) => c.targets.includes(botName)).slice(0, 5),
+    [commandHistory, botName]
   );
 
   // Find the last command to show live status updates
@@ -210,8 +216,57 @@ export function BotCommandCenter({ botName, state, voyagerPaused, voyagerRunning
           color="#3B82F6"
           loading={loading === 'Walk to'}
           disabled={isDisconnected}
-          onClick={() => { setShowWalkInput(!showWalkInput); setShowFollowInput(false); }}
+          onClick={() => {
+            setShowWalkInput(!showWalkInput);
+            setShowFollowInput(false);
+            setShowMarkerInput(false);
+            setShowZoneInput(false);
+          }}
           active={showWalkInput}
+        />
+        <CmdButton
+          label="To Marker"
+          icon="M"
+          color="#0EA5E9"
+          loading={loading === 'Move to marker'}
+          disabled={isDisconnected || markers.length === 0}
+          onClick={() => {
+            setShowMarkerInput(!showMarkerInput);
+            setShowWalkInput(false);
+            setShowFollowInput(false);
+            setShowZoneInput(false);
+          }}
+          active={showMarkerInput}
+        />
+        <CmdButton
+          label="Guard Zone"
+          icon="G"
+          color="#F97316"
+          loading={loading === 'Guard zone'}
+          disabled={isDisconnected || zones.length === 0}
+          onClick={() => {
+            setShowZoneInput(!showZoneInput);
+            setShowWalkInput(false);
+            setShowFollowInput(false);
+            setShowMarkerInput(false);
+          }}
+          active={showZoneInput}
+        />
+        <CmdButton
+          label="Return"
+          icon="R"
+          color="#14B8A6"
+          loading={loading === 'Return to base'}
+          disabled={isDisconnected}
+          onClick={() => execCommand('Return to base', 'return_to_base')}
+        />
+        <CmdButton
+          label="Unstuck"
+          icon="U"
+          color="#EAB308"
+          loading={loading === 'Unstuck'}
+          disabled={isDisconnected}
+          onClick={() => execCommand('Unstuck', 'unstuck')}
         />
       </div>
 
@@ -255,6 +310,56 @@ export function BotCommandCenter({ botName, state, voyagerPaused, voyagerRunning
               </button>
             </div>
           )}
+        </motion.div>
+      )}
+
+      {showMarkerInput && (
+        <motion.div
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: 'auto', opacity: 1 }}
+          className="overflow-hidden mb-2"
+        >
+          <div className="space-y-1">
+            <p className="text-[10px] text-zinc-500 mb-1">Select marker:</p>
+            {markers.map((marker) => (
+              <button
+                key={marker.id}
+                onClick={() => {
+                  execCommand('Move to marker', 'move_to_marker', { markerId: marker.id });
+                  setShowMarkerInput(false);
+                }}
+                className="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-md text-left text-xs text-zinc-300 hover:bg-zinc-800 transition-colors"
+              >
+                <span>{marker.name}</span>
+                <span className="text-zinc-600">{marker.kind}</span>
+              </button>
+            ))}
+          </div>
+        </motion.div>
+      )}
+
+      {showZoneInput && (
+        <motion.div
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: 'auto', opacity: 1 }}
+          className="overflow-hidden mb-2"
+        >
+          <div className="space-y-1">
+            <p className="text-[10px] text-zinc-500 mb-1">Select zone:</p>
+            {zones.map((zone) => (
+              <button
+                key={zone.id}
+                onClick={() => {
+                  execCommand('Guard zone', 'guard_zone', { zoneId: zone.id });
+                  setShowZoneInput(false);
+                }}
+                className="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-md text-left text-xs text-zinc-300 hover:bg-zinc-800 transition-colors"
+              >
+                <span>{zone.name}</span>
+                <span className="text-zinc-600">{zone.shape}</span>
+              </button>
+            ))}
+          </div>
         </motion.div>
       )}
 

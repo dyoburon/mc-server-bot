@@ -1,5 +1,7 @@
 import { Server as SocketIOServer } from 'socket.io';
 import { RoleAssignmentRecord, RoleType, AutonomyLevel, FLEET_EVENTS } from './FleetTypes';
+import type { MissionManager } from './MissionManager';
+import type { MissionType } from './MissionTypes';
 import { logger } from '../util/logger';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -23,12 +25,21 @@ export class RoleManager {
   private readonly io: SocketIOServer;
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
   private overrideCheckInterval: ReturnType<typeof setInterval> | null = null;
+  private automationInterval: ReturnType<typeof setInterval> | null = null;
+  private missionManager: MissionManager | null = null;
+  private lastGeneratedAt: Map<string, number> = new Map();
 
   constructor(io: SocketIOServer) {
     this.io = io;
     this.filePath = path.join(process.cwd(), 'data', 'roles.json');
     this.load();
     this.overrideCheckInterval = setInterval(() => this.checkOverrideTimeouts(), 30_000);
+    this.automationInterval = setInterval(() => this.evaluateAutomation(), 60_000);
+  }
+
+  setMissionManager(missionManager: MissionManager): void {
+    this.missionManager = missionManager;
+    this.evaluateAutomation();
   }
 
   // ── Manual Override Tracking ──────────────────────────────
@@ -43,6 +54,7 @@ export class RoleManager {
     if (this.overrides.delete(botName)) {
       this.io.emit(FLEET_EVENTS.ROLE_UPDATED, { assignments: this.assignments, overrides: this.getOverrides() });
       logger.info({ botName }, 'RoleManager: override cleared');
+      this.evaluateAutomation(botName);
     }
   }
 
@@ -123,7 +135,112 @@ export class RoleManager {
   /** Flush pending saves and clear timers */
   shutdown(): void {
     if (this.overrideCheckInterval) { clearInterval(this.overrideCheckInterval); this.overrideCheckInterval = null; }
+    if (this.automationInterval) { clearInterval(this.automationInterval); this.automationInterval = null; }
     this.saveImmediate();
+  }
+
+  private getDefaultMissionType(assignment: RoleAssignmentRecord): MissionType | null {
+    const preferred = assignment.preferredMissionTypes[0] as MissionType | undefined;
+    if (preferred) return preferred;
+
+    switch (assignment.role) {
+      case 'guard':
+        return 'patrol_zone';
+      case 'builder':
+      case 'hauler':
+      case 'farmer':
+      case 'miner':
+      case 'scout':
+      case 'merchant':
+        return 'queue_task';
+      case 'free-agent':
+      default:
+        return null;
+    }
+  }
+
+  private getDefaultMissionTitle(assignment: RoleAssignmentRecord): string {
+    switch (assignment.role) {
+      case 'guard':
+        return assignment.homeMarkerId ? `Guard ${assignment.homeMarkerId}` : `Guard assigned area`;
+      case 'builder':
+        return 'Maintain builder readiness';
+      case 'hauler':
+        return 'Maintain hauling readiness';
+      case 'farmer':
+        return 'Maintain farming readiness';
+      case 'miner':
+        return 'Maintain mining readiness';
+      case 'scout':
+        return 'Maintain scouting readiness';
+      case 'merchant':
+        return 'Maintain merchant readiness';
+      default:
+        return `Role automation for ${assignment.role}`;
+    }
+  }
+
+  private canReplaceActiveMission(assignment: RoleAssignmentRecord, activeMission: { priority: string; source: string; status: string } | undefined): boolean {
+    if (!activeMission) return true;
+    if (activeMission.source === 'role') return false;
+
+    switch (assignment.interruptPolicy) {
+      case 'always':
+        return true;
+      case 'never-while-critical':
+        return !['running', 'paused'].includes(activeMission.status) && activeMission.priority !== 'urgent';
+      case 'confirm-if-busy':
+      default:
+        return false;
+    }
+  }
+
+  evaluateAutomation(botName?: string): void {
+    if (!this.missionManager) return;
+
+    const candidates = botName
+      ? this.assignments.filter((assignment) => assignment.botName === botName)
+      : this.assignments;
+
+    const now = Date.now();
+
+    for (const assignment of candidates) {
+      if (assignment.autonomyLevel !== 'autonomous') continue;
+      if (assignment.role === 'free-agent') continue;
+      if (this.isOverridden(assignment.botName)) continue;
+
+      const activeMissions = this.missionManager.getMissions({ bot: assignment.botName })
+        .filter((mission) => ['draft', 'queued', 'running', 'paused'].includes(mission.status));
+      const activeRoleMission = activeMissions.find((mission) => mission.source === 'role');
+      if (activeRoleMission) continue;
+
+      const activeNonRoleMission = activeMissions.find((mission) => mission.source !== 'role');
+      if (!this.canReplaceActiveMission(assignment, activeNonRoleMission)) continue;
+
+      const lastGeneratedAt = this.lastGeneratedAt.get(assignment.botName) ?? 0;
+      if (now - lastGeneratedAt < 60_000) continue;
+
+      const missionType = this.getDefaultMissionType(assignment);
+      if (!missionType) continue;
+
+      const loadoutHint = assignment.loadoutPolicy ? ' Loadout policy configured.' : '';
+      const zoneHint = assignment.allowedZoneIds.length > 0 ? ` Allowed zones: ${assignment.allowedZoneIds.join(', ')}.` : '';
+      const description = assignment.homeMarkerId
+        ? `Auto-generated ${assignment.role} mission near ${assignment.homeMarkerId}`
+        : `Auto-generated ${assignment.role} mission`;
+
+      this.missionManager.createMission({
+        type: missionType,
+        title: this.getDefaultMissionTitle(assignment),
+        description: `${description}.${zoneHint}${loadoutHint}`.trim(),
+        assigneeType: 'bot',
+        assigneeIds: [assignment.botName],
+        priority: 'normal',
+        source: 'role',
+      });
+      this.lastGeneratedAt.set(assignment.botName, now);
+      logger.info({ botName: assignment.botName, role: assignment.role, missionType }, 'RoleManager: auto-generated role mission');
+    }
   }
 
   private generateId(): string {
@@ -176,6 +293,7 @@ export class RoleManager {
     this.assignments.push(record);
     this.save();
     this.emit();
+    this.evaluateAutomation(record.botName);
     logger.info({ assignmentId: record.id, botName: record.botName, role: record.role, action: 'create' }, 'RoleManager: assignment created');
     return record;
   }
@@ -211,6 +329,7 @@ export class RoleManager {
 
     this.save();
     this.emit();
+    this.evaluateAutomation(this.assignments[idx].botName);
     logger.info(
       { assignmentId: id, botName: this.assignments[idx].botName, role: this.assignments[idx].role, action: 'update' },
       'RoleManager: assignment updated',
@@ -225,6 +344,7 @@ export class RoleManager {
     const removed = this.assignments.splice(idx, 1)[0];
     this.save();
     this.emit();
+    this.lastGeneratedAt.delete(removed.botName);
     logger.info({ assignmentId: id, botName: removed.botName, role: removed.role, action: 'delete' }, 'RoleManager: assignment deleted');
     return true;
   }

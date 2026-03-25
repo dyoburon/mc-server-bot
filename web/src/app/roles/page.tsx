@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { api, type RoleAssignmentRecord, type BotStatus } from '@/lib/api';
+import { api, type RoleAssignmentRecord, type BotStatus, type RoleOverrideRecord } from '@/lib/api';
 import {
   RoleAssignmentPanel,
   ROLE_COLORS,
@@ -16,6 +16,7 @@ export default function RolesPage() {
   const [bots, setBots] = useState<BotStatus[]>([]);
   const [editingBot, setEditingBot] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [overrides, setOverrides] = useState<Record<string, RoleOverrideRecord>>({});
 
   const loadData = useCallback(async () => {
     try {
@@ -24,6 +25,7 @@ export default function RolesPage() {
         api.getBots(),
       ]);
       setAssignments(assignData.assignments);
+      setOverrides(assignData.overrides ?? {});
       setBots(botData.bots);
     } catch {
       // silently fail
@@ -47,9 +49,18 @@ export default function RolesPage() {
     loadData();
   };
 
-  const handleDelete = async (botName: string) => {
+  const handleDelete = async (assignmentId: string) => {
     try {
-      await api.deleteRoleAssignment(botName);
+      await api.deleteRoleAssignment(assignmentId);
+      loadData();
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleClearOverride = async (botName: string) => {
+    try {
+      await api.clearBotOverride(botName);
       loadData();
     } catch {
       // ignore
@@ -153,6 +164,8 @@ export default function RolesPage() {
           <div className="divide-y divide-zinc-800/40">
             {assignments.map((a) => {
               const color = ROLE_COLORS[a.role] || '#6B7280';
+              const override = overrides[a.botName];
+              const overrideAge = override ? Math.max(0, Math.round((Date.now() - override.at) / 1000)) : 0;
               return (
                 <div key={a.botName} className="px-5 py-3 flex items-center gap-4 hover:bg-zinc-800/20 transition-colors">
                   {/* Bot name */}
@@ -184,6 +197,20 @@ export default function RolesPage() {
                     {a.autonomyLevel}
                   </span>
 
+                  {override && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded">
+                        Override: {override.reason} ({overrideAge}s)
+                      </span>
+                      <button
+                        onClick={() => handleClearOverride(a.botName)}
+                        className="text-[10px] text-zinc-500 hover:text-zinc-300 px-2 py-0.5 rounded border border-zinc-800/60 hover:border-zinc-700/60"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  )}
+
                   {/* Home marker */}
                   {a.homeMarkerId && (
                     <span className="text-[10px] text-zinc-500 flex items-center gap-1">
@@ -205,6 +232,12 @@ export default function RolesPage() {
                     </div>
                   )}
 
+                  {a.interruptPolicy && (
+                    <span className="text-[10px] text-cyan-300 bg-cyan-500/10 px-2 py-0.5 rounded border border-cyan-500/20">
+                      {a.interruptPolicy}
+                    </span>
+                  )}
+
                   {/* Spacer */}
                   <div className="flex-1" />
 
@@ -217,7 +250,7 @@ export default function RolesPage() {
                       Edit
                     </button>
                     <button
-                      onClick={() => handleDelete(a.botName)}
+                      onClick={() => handleDelete(a.id)}
                       className="text-zinc-600 hover:text-red-400 px-2 py-1 rounded text-[11px] font-medium transition-colors hover:bg-red-500/5"
                     >
                       Remove

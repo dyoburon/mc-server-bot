@@ -8,7 +8,7 @@ import { api } from '@/lib/api';
 export function FleetSelectionBar() {
   const selectedBotIds = useControlStore((s) => s.selectedBotIds);
   const clearSelection = useControlStore((s) => s.clearSelection);
-  const addSquad = useFleetStore((s) => s.addSquad);
+  const upsertSquad = useFleetStore((s) => s.upsertSquad);
   const [showNameInput, setShowNameInput] = useState(false);
   const [squadName, setSquadName] = useState('');
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -19,7 +19,7 @@ export function FleetSelectionBar() {
   const handleStopAll = async () => {
     setActionLoading('stop');
     try {
-      await Promise.all(botNames.map((name) => api.stopBot(name)));
+      await api.createCommand({ type: 'stop_movement', targets: botNames, scope: 'selection', source: 'dashboard' });
     } catch {
       // ignore individual failures
     }
@@ -29,16 +29,17 @@ export function FleetSelectionBar() {
   const handlePauseAll = async () => {
     setActionLoading('pause');
     try {
-      await Promise.all(botNames.map((name) => api.pauseBot(name)));
+      await api.createCommand({ type: 'pause_voyager', targets: botNames, scope: 'selection', source: 'dashboard' });
     } catch {
       // ignore
     }
     setActionLoading(null);
   };
 
-  const handleCreateSquad = () => {
+  const handleCreateSquad = async () => {
     if (!squadName.trim()) return;
-    addSquad(squadName.trim(), botNames);
+    const result = await api.createSquad({ name: squadName.trim(), botNames });
+    upsertSquad(result.squad);
     setSquadName('');
     setShowNameInput(false);
   };

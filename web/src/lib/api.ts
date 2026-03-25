@@ -225,6 +225,24 @@ export interface CommandRecord {
   error?: { code: string; message: string; retryable?: boolean };
 }
 
+type RawCommandRecord = {
+  id: string;
+  type: CommandType;
+  scope: 'single' | 'bot' | 'squad' | 'selection' | 'all';
+  targets: string[];
+  payload?: Record<string, unknown>;
+  params?: Record<string, unknown>;
+  priority: 'low' | 'normal' | 'high' | 'urgent' | 'critical';
+  source: string;
+  requestedBy?: string;
+  status: CommandStatus;
+  createdAt: number | string;
+  startedAt?: number | string;
+  completedAt?: number | string;
+  result?: Record<string, unknown>;
+  error?: { code: string; message: string; retryable?: boolean };
+};
+
 export interface MissionRecord {
   id: string;
   type: string;
@@ -305,6 +323,14 @@ export interface RoleAssignmentRecord {
   homeMarkerId?: string;
   allowedZoneIds: string[];
   preferredMissionTypes: string[];
+  interruptPolicy?: 'always' | 'confirm-if-busy' | 'never-while-critical';
+  loadoutPolicy?: Record<string, unknown>;
+}
+
+export interface RoleOverrideRecord {
+  reason: string;
+  commandId: string;
+  at: number;
 }
 
 export interface CommanderPlan {
@@ -333,6 +359,53 @@ export interface CommanderResult {
   success: boolean;
   commandResults: CommanderCommandResult[];
   missionsCreated: CommanderMissionResult[];
+}
+
+function toTimestamp(value?: number | string): number | undefined {
+  if (value == null) return undefined;
+  if (typeof value === 'number') return value;
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? undefined : parsed;
+}
+
+function normalizeCommandScope(scope: RawCommandRecord['scope']): CommandRecord['scope'] {
+  if (scope === 'single' || scope === 'all') {
+    return 'bot';
+  }
+  return scope;
+}
+
+function normalizeCommandPriority(priority: RawCommandRecord['priority']): CommandRecord['priority'] {
+  return priority === 'critical' ? 'urgent' : priority;
+}
+
+export function normalizeCommandRecord(command: RawCommandRecord): CommandRecord {
+  return {
+    id: command.id,
+    type: command.type,
+    scope: normalizeCommandScope(command.scope),
+    targets: command.targets ?? [],
+    payload: command.payload ?? command.params ?? {},
+    priority: normalizeCommandPriority(command.priority),
+    source: command.source,
+    requestedBy: command.requestedBy,
+    status: command.status,
+    createdAt: toTimestamp(command.createdAt) ?? Date.now(),
+    startedAt: toTimestamp(command.startedAt),
+    completedAt: toTimestamp(command.completedAt),
+    result: command.result,
+    error: command.error,
+  };
+}
+
+export function normalizeMissionRecord(mission: MissionRecord): MissionRecord {
+  return {
+    ...mission,
+    createdAt: toTimestamp(mission.createdAt) ?? Date.now(),
+    updatedAt: toTimestamp(mission.updatedAt) ?? Date.now(),
+    startedAt: toTimestamp(mission.startedAt),
+    completedAt: toTimestamp(mission.completedAt),
+  };
 }
 
 // API functions
@@ -365,6 +438,8 @@ export const api = {
   // Terrain
   getTerrain: (cx: number, cz: number, radius = 64, step = 1) =>
     fetchJSON<TerrainData>(`/api/terrain?cx=${cx}&cz=${cz}&radius=${radius}&step=${step}`),
+  getTerrainHeight: (x: number, z: number) =>
+    fetchJSON<{ x: number; z: number; y: number; block: string }>(`/api/terrain/height?x=${x}&z=${z}`),
 
   // Global
   getRelationships: () => fetchJSON<{ relationships: Record<string, Record<string, number>> }>('/api/relationships'),
@@ -413,10 +488,10 @@ export const api = {
   getSchematic: (filename: string) => fetchJSON<{ schematic: SchematicInfo }>(`/api/schematics/${encodeURIComponent(filename)}`),
   getBuilds: () => fetchJSON<{ builds: BuildJob[] }>('/api/builds'),
   getBuild: (id: string) => fetchJSON<{ build: BuildJob }>(`/api/builds/${id}`),
-  startBuild: (schematicFile: string, origin: { x: number; y: number; z: number }, botNames: string[]) =>
+  startBuild: (schematicFile: string, origin: { x: number; y: number; z: number }, botNames: string[], cleanupBotNames?: string[], options?: { fillFoundation?: boolean; snapToGround?: boolean }) =>
     fetchJSON<{ success: boolean; build: BuildJob }>('/api/builds', {
       method: 'POST',
-      body: JSON.stringify({ schematicFile, origin, botNames }),
+      body: JSON.stringify({ schematicFile, origin, botNames, cleanupBotNames, ...options }),
     }),
   cancelBuild: (id: string) => fetchJSON<{ success: boolean }>(`/api/builds/${id}/cancel`, { method: 'POST' }),
   pauseBuild: (id: string) => fetchJSON<{ success: boolean }>(`/api/builds/${id}/pause`, { method: 'POST' }),
@@ -437,18 +512,33 @@ export const api = {
   // ═══════════════════════════════════════
 
   // Commands
-  createCommand: (data: { type: CommandType; scope: 'bot' | 'squad' | 'selection'; targets: string[]; payload?: Record<string, unknown>; priority?: string; source?: string }) =>
-    fetchJSON<{ command: CommandRecord }>('/api/commands', { method: 'POST', body: JSON.stringify(data) }),
+  createCommand: async (data: { type: CommandType; scope: 'bot' | 'squad' | 'selection'; targets: string[]; payload?: Record<string, unknown>; priority?: string; source?: string }) => {
+    const scope = data.scope === 'bot' ? 'single' : data.scope;
+    const priority = data.priority === 'urgent' ? 'critical' : data.priority;
+    const result = await fetchJSON<{ command: RawCommandRecord }>('/api/commands', {
+      method: 'POST',
+      body: JSON.stringify({
+        ...data,
+        scope,
+        priority,
+        params: data.payload ?? {},
+      }),
+    });
+    return { command: normalizeCommandRecord(result.command) };
+  },
   getCommands: (params?: { bot?: string; status?: string; limit?: number }) => {
     const query = new URLSearchParams();
     if (params?.bot) query.set('bot', params.bot);
     if (params?.status) query.set('status', params.status);
     if (params?.limit) query.set('limit', String(params.limit));
     const qs = query.toString();
-    return fetchJSON<{ commands: CommandRecord[] }>(`/api/commands${qs ? '?' + qs : ''}`);
+    return fetchJSON<{ commands: RawCommandRecord[] }>(`/api/commands${qs ? '?' + qs : ''}`)
+      .then((result) => ({ commands: result.commands.map(normalizeCommandRecord) }));
   },
-  getCommand: (id: string) => fetchJSON<{ command: CommandRecord }>(`/api/commands/${id}`),
-  cancelCommand: (id: string) => fetchJSON<{ success: boolean }>(`/api/commands/${id}/cancel`, { method: 'POST' }),
+  getCommand: (id: string) => fetchJSON<{ command: RawCommandRecord }>(`/api/commands/${id}`)
+    .then((result) => ({ command: normalizeCommandRecord(result.command) })),
+  cancelCommand: (id: string) => fetchJSON<{ command: RawCommandRecord }>(`/api/commands/${id}/cancel`, { method: 'POST' })
+    .then((result) => ({ command: normalizeCommandRecord(result.command) })),
 
   // Missions
   createMission: (data: { type: string; title: string; description?: string; assigneeType: 'bot' | 'squad'; assigneeIds: string[]; priority?: string; steps?: any[]; source?: string }) =>
@@ -460,16 +550,23 @@ export const api = {
     if (params?.status) query.set('status', params.status);
     if (params?.limit) query.set('limit', String(params.limit));
     const qs = query.toString();
-    return fetchJSON<{ missions: MissionRecord[] }>(`/api/missions${qs ? '?' + qs : ''}`);
+    return fetchJSON<{ missions: MissionRecord[] }>(`/api/missions${qs ? '?' + qs : ''}`)
+      .then((result) => ({ missions: result.missions.map(normalizeMissionRecord) }));
   },
-  getMission: (id: string) => fetchJSON<{ mission: MissionRecord }>(`/api/missions/${id}`),
-  pauseMission: (id: string) => fetchJSON<{ success: boolean }>(`/api/missions/${id}/pause`, { method: 'POST' }),
-  resumeMission: (id: string) => fetchJSON<{ success: boolean }>(`/api/missions/${id}/resume`, { method: 'POST' }),
-  cancelMission: (id: string) => fetchJSON<{ success: boolean }>(`/api/missions/${id}/cancel`, { method: 'POST' }),
-  retryMission: (id: string) => fetchJSON<{ success: boolean }>(`/api/missions/${id}/retry`, { method: 'POST' }),
+  getMission: (id: string) => fetchJSON<{ mission: MissionRecord }>(`/api/missions/${id}`)
+    .then((result) => ({ mission: normalizeMissionRecord(result.mission) })),
+  pauseMission: (id: string) => fetchJSON<{ mission: MissionRecord }>(`/api/missions/${id}/pause`, { method: 'POST' })
+    .then((result) => ({ mission: normalizeMissionRecord(result.mission) })),
+  resumeMission: (id: string) => fetchJSON<{ mission: MissionRecord }>(`/api/missions/${id}/resume`, { method: 'POST' })
+    .then((result) => ({ mission: normalizeMissionRecord(result.mission) })),
+  cancelMission: (id: string) => fetchJSON<{ mission: MissionRecord }>(`/api/missions/${id}/cancel`, { method: 'POST' })
+    .then((result) => ({ mission: normalizeMissionRecord(result.mission) })),
+  retryMission: (id: string) => fetchJSON<{ mission: MissionRecord }>(`/api/missions/${id}/retry`, { method: 'POST' })
+    .then((result) => ({ mission: normalizeMissionRecord(result.mission) })),
   getBotMissionQueue: (botName: string) =>
-    fetchJSON<{ missions: MissionRecord[] }>(`/api/bots/${botName}/mission-queue`),
-  updateBotMissionQueue: (botName: string, data: { action: string; missionId?: string; position?: number }) =>
+    fetchJSON<{ missions: MissionRecord[]; voyagerTasks?: unknown[] }>(`/api/bots/${botName}/mission-queue`)
+      .then((result) => ({ ...result, missions: result.missions.map(normalizeMissionRecord) })),
+  updateBotMissionQueue: (botName: string, data: { action: string; missionId?: string; fromIndex?: number; toIndex?: number }) =>
     fetchJSON<{ success: boolean }>(`/api/bots/${botName}/mission-queue`, { method: 'PATCH', body: JSON.stringify(data) }),
 
   // World Planning - Markers
@@ -504,22 +601,44 @@ export const api = {
   updateSquad: (id: string, data: Partial<SquadRecord>) =>
     fetchJSON<{ squad: SquadRecord }>(`/api/squads/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteSquad: (id: string) => fetchJSON<{ success: boolean }>(`/api/squads/${id}`, { method: 'DELETE' }),
+  addSquadMember: (id: string, botName: string) =>
+    fetchJSON<{ success: boolean }>(`/api/squads/${id}/members`, { method: 'POST', body: JSON.stringify({ botName }) }),
+  removeSquadMember: (id: string, botName: string) =>
+    fetchJSON<{ success: boolean }>(`/api/squads/${id}/members/${encodeURIComponent(botName)}`, { method: 'DELETE' }),
   sendSquadCommand: (id: string, data: any) =>
     fetchJSON<{ command: CommandRecord }>(`/api/squads/${id}/commands`, { method: 'POST', body: JSON.stringify(data) }),
   sendSquadMission: (id: string, data: any) =>
     fetchJSON<{ mission: MissionRecord }>(`/api/squads/${id}/missions`, { method: 'POST', body: JSON.stringify(data) }),
 
   // Roles
-  getRoleAssignments: () => fetchJSON<{ assignments: RoleAssignmentRecord[] }>('/api/roles'),
+  getRoleAssignments: () => fetchJSON<{ assignments: RoleAssignmentRecord[]; overrides?: Record<string, RoleOverrideRecord> }>('/api/roles'),
   createRoleAssignment: (data: Partial<RoleAssignmentRecord>) =>
     fetchJSON<{ assignment: RoleAssignmentRecord }>('/api/roles/assignments', { method: 'POST', body: JSON.stringify(data) }),
   updateRoleAssignment: (id: string, data: Partial<RoleAssignmentRecord>) =>
     fetchJSON<{ assignment: RoleAssignmentRecord }>(`/api/roles/assignments/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteRoleAssignment: (id: string) => fetchJSON<{ success: boolean }>(`/api/roles/assignments/${id}`, { method: 'DELETE' }),
+  clearBotOverride: (botName: string) => fetchJSON<{ success: boolean }>(`/api/bots/${encodeURIComponent(botName)}/override`, { method: 'DELETE' }),
+
+  // Blackboard / Coordination
+  getBlackboard: () => fetchJSON<{
+    blackboard: {
+      swarmGoal: { id: string; rawRequest: string; requestedBy: string; scope: string; status: string; createdAt: number; updatedAt: number } | null;
+      goals: { id: string; rawRequest: string; requestedBy: string; scope: string; botName?: string; status: string; createdAt: number; updatedAt: number }[];
+      tasks: { id: string; description: string; keywords: string[]; status: string; assignedBot?: string; source: string; goalId?: string; blocker?: string; createdAt: number; updatedAt: number }[];
+      messages: { id: string; botName: string; kind: string; text: string; createdAt: number }[];
+    };
+  }>('/api/blackboard'),
 
   // Commander
   parseCommanderInput: (input: string) =>
-    fetchJSON<{ plan: CommanderPlan }>('/api/commander/parse', { method: 'POST', body: JSON.stringify({ input }) }),
+    fetchJSON<{ plan: Omit<CommanderPlan, 'parsedIntent'> & { intent?: string; parsedIntent?: string } }>('/api/commander/parse', { method: 'POST', body: JSON.stringify({ input }) })
+      .then((result) => ({
+        plan: {
+          ...result.plan,
+          parsedIntent: result.plan.parsedIntent ?? result.plan.intent ?? 'unknown',
+        },
+      })),
   executeCommanderPlan: (planId: string) =>
-    fetchJSON<{ success: boolean; result: CommanderResult }>('/api/commander/execute', { method: 'POST', body: JSON.stringify({ planId }) }),
+    fetchJSON<CommanderResult | { success: boolean; result: CommanderResult }>('/api/commander/execute', { method: 'POST', body: JSON.stringify({ planId }) })
+      .then((result) => ('result' in result ? result : { success: true, result })),
 };

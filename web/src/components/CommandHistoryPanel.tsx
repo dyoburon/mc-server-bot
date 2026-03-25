@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { api, type BotEvent } from '@/lib/api';
-import { useBotStore } from '@/lib/store';
+import { api, type CommandRecord } from '@/lib/api';
+import { useControlStore } from '@/lib/store';
 
 const STATUS_COLORS: Record<string, string> = {
   queued: '#F59E0B',
@@ -13,15 +13,20 @@ const STATUS_COLORS: Record<string, string> = {
   cancelled: '#6B7280',
 };
 
-const EVENT_TYPE_LABELS: Record<string, { label: string; color: string }> = {
-  task_started: { label: 'Task', color: '#3B82F6' },
-  task_completed: { label: 'Task', color: '#10B981' },
-  task_failed: { label: 'Task', color: '#EF4444' },
-  skill_executed: { label: 'Skill', color: '#8B5CF6' },
-  movement: { label: 'Move', color: '#F59E0B' },
-  chat: { label: 'Chat', color: '#EC4899' },
-  action: { label: 'Action', color: '#06B6D4' },
-  state_change: { label: 'State', color: '#6B7280' },
+const COMMAND_TYPE_COLORS: Record<string, string> = {
+  stop_movement: '#EF4444',
+  follow_player: '#8B5CF6',
+  walk_to_coords: '#3B82F6',
+  pause_voyager: '#F59E0B',
+  resume_voyager: '#10B981',
+  move_to_marker: '#0EA5E9',
+  return_to_base: '#14B8A6',
+  regroup: '#22C55E',
+  guard_zone: '#F97316',
+  patrol_route: '#A855F7',
+  equip_best: '#EC4899',
+  unstuck: '#EAB308',
+  default: '#6B7280',
 };
 
 function formatTimeAgo(timestamp: number): string {
@@ -35,12 +40,8 @@ function formatTimeAgo(timestamp: number): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
-function getCommandStatus(type: string): string {
-  if (type.includes('completed') || type.includes('succeeded')) return 'succeeded';
-  if (type.includes('failed')) return 'failed';
-  if (type.includes('started') || type.includes('running')) return 'started';
-  if (type.includes('cancelled')) return 'cancelled';
-  return 'queued';
+function commandTypeLabel(type: string): string {
+  return type.replace(/_/g, ' ');
 }
 
 interface Props {
@@ -48,48 +49,28 @@ interface Props {
 }
 
 export function CommandHistoryPanel({ botName }: Props) {
-  const [commands, setCommands] = useState<BotEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(true);
-  const activityFeed = useBotStore((s) => s.activityFeed);
-
-  const fetchCommands = useCallback(async () => {
-    try {
-      // Try fetching command history from API
-      const data = await api.getActivity(20, botName);
-      setCommands(data.events);
-    } catch {
-      // Fallback to activity feed from store
-      const filtered = activityFeed
-        .filter((e) => e.botName.toLowerCase() === botName.toLowerCase())
-        .slice(0, 20);
-      setCommands(filtered);
-    }
-    setLoading(false);
-  }, [botName, activityFeed]);
+  const commandHistory = useControlStore((s) => s.commandHistory);
 
   useEffect(() => {
-    fetchCommands();
-    const interval = setInterval(fetchCommands, 8000);
-    return () => clearInterval(interval);
-  }, [fetchCommands]);
-
-  // Also merge in live activity feed events for this bot
-  useEffect(() => {
-    const liveEvents = activityFeed.filter(
-      (e) => e.botName.toLowerCase() === botName.toLowerCase()
-    );
-    if (liveEvents.length > 0) {
-      setCommands((prev) => {
-        const existingIds = new Set(prev.map((e) => `${e.type}-${e.timestamp}`));
-        const newEvents = liveEvents.filter(
-          (e) => !existingIds.has(`${e.type}-${e.timestamp}`)
-        );
-        if (newEvents.length === 0) return prev;
-        return [...newEvents, ...prev].slice(0, 30);
-      });
+    if (commandHistory.length > 0) {
+      setLoading(false);
+      return;
     }
-  }, [activityFeed, botName]);
+
+    api.getCommands({ bot: botName, limit: 30 })
+      .then((data) => {
+        useControlStore.getState().setCommands(data.commands);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [botName, commandHistory.length]);
+
+  const commands = useMemo(
+    () => commandHistory.filter((command) => command.targets.some((target) => target.toLowerCase() === botName.toLowerCase())).slice(0, 30),
+    [commandHistory, botName],
+  );
 
   return (
     <motion.div
@@ -134,13 +115,17 @@ export function CommandHistoryPanel({ botName }: Props) {
             ) : (
               <div className="space-y-0.5 max-h-72 overflow-y-auto">
                 {commands.map((cmd, i) => {
-                  const status = getCommandStatus(cmd.type);
-                  const statusColor = STATUS_COLORS[status] || '#6B7280';
-                  const typeInfo = EVENT_TYPE_LABELS[cmd.type] || { label: cmd.type.replace(/_/g, ' '), color: '#6B7280' };
+                  const statusColor = STATUS_COLORS[cmd.status] || '#6B7280';
+                  const typeColor = COMMAND_TYPE_COLORS[cmd.type] || COMMAND_TYPE_COLORS.default;
+                  const description = cmd.error?.message
+                    ? cmd.error.message
+                    : cmd.result?.message && typeof cmd.result.message === 'string'
+                      ? cmd.result.message
+                      : cmd.targets.join(', ');
 
                   return (
                     <motion.div
-                      key={`${cmd.type}-${cmd.timestamp}-${i}`}
+                      key={`${cmd.id}-${i}`}
                       initial={{ opacity: 0, x: -4 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: i * 0.02 }}
@@ -153,27 +138,27 @@ export function CommandHistoryPanel({ botName }: Props) {
                       />
 
                       {/* Type badge */}
-                      <span
-                        className="text-[9px] font-medium px-1.5 py-0.5 rounded shrink-0"
-                        style={{
-                          color: typeInfo.color,
-                          backgroundColor: `${typeInfo.color}12`,
-                        }}
-                      >
-                        {typeInfo.label}
-                      </span>
+                        <span
+                          className="text-[9px] font-medium px-1.5 py-0.5 rounded shrink-0"
+                          style={{
+                            color: typeColor,
+                            backgroundColor: `${typeColor}12`,
+                          }}
+                        >
+                          {commandTypeLabel(cmd.type)}
+                        </span>
 
-                      {/* Description */}
-                      <span className="text-[11px] text-zinc-400 truncate flex-1">
-                        {cmd.description}
-                      </span>
+                        {/* Description */}
+                        <span className="text-[11px] text-zinc-400 truncate flex-1">
+                          {description}
+                        </span>
 
-                      {/* Timestamp */}
-                      <span className="text-[9px] text-zinc-600 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                        {formatTimeAgo(cmd.timestamp)}
-                      </span>
-                    </motion.div>
-                  );
+                        {/* Timestamp */}
+                        <span className="text-[9px] text-zinc-600 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                          {formatTimeAgo(cmd.createdAt)}
+                        </span>
+                      </motion.div>
+                    );
                 })}
               </div>
             )}

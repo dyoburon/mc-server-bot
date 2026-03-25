@@ -2,8 +2,8 @@
 
 import { useEffect } from 'react';
 import { getSocket } from '@/lib/socket';
-import { useBotStore, useWorldStore, useFleetStore, useRoleStore } from '@/lib/store';
-import { api } from '@/lib/api';
+import { useBotStore, useWorldStore, useFleetStore, useRoleStore, useControlStore, useMissionStore } from '@/lib/store';
+import { api, normalizeMissionRecord } from '@/lib/api';
 
 export function SocketProvider({ children }: { children: React.ReactNode }) {
   const {
@@ -25,6 +25,8 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     api.getRoutes().then((d) => useWorldStore.getState().setRoutes(d.routes)).catch(() => {});
     api.getSquads().then((d) => useFleetStore.getState().setSquads(d.squads)).catch(() => {});
     api.getRoleAssignments().then((d) => useRoleStore.getState().setAssignments(d.assignments)).catch(() => {});
+    api.getCommands({ limit: 100 }).then((d) => useControlStore.getState().setCommands(d.commands)).catch(() => {});
+    api.getMissions({ limit: 100 }).then((d) => useMissionStore.getState().setMissions(d.missions)).catch(() => {});
 
     // Poll bots every 5s as a fallback
     const pollInterval = setInterval(() => {
@@ -93,17 +95,58 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       incrementUnreadChats();
     });
 
+    const refreshCommand = (data: { id: string }) => {
+      if (!data?.id) return;
+      api.getCommand(data.id)
+        .then((result) => useControlStore.getState().upsertCommand(result.command))
+        .catch(() => {});
+    };
+
+    socket.on('command:queued', refreshCommand);
+    socket.on('command:started', refreshCommand);
+    socket.on('command:succeeded', refreshCommand);
+    socket.on('command:failed', refreshCommand);
+    socket.on('command:cancelled', refreshCommand);
+
+    socket.on('mission:created', (data: any) => {
+      useMissionStore.getState().upsertMission(normalizeMissionRecord(data));
+    });
+    socket.on('mission:updated', (data: any) => {
+      useMissionStore.getState().upsertMission(normalizeMissionRecord(data));
+    });
+    socket.on('mission:completed', (data: any) => {
+      useMissionStore.getState().upsertMission(normalizeMissionRecord(data));
+    });
+    socket.on('mission:failed', (data: any) => {
+      useMissionStore.getState().upsertMission(normalizeMissionRecord(data));
+    });
+    socket.on('mission:cancelled', (data: any) => {
+      useMissionStore.getState().upsertMission(normalizeMissionRecord(data));
+    });
+
     // World planning events
     socket.on('marker:created', (data: any) => {
       useWorldStore.getState().upsertMarker(data);
     });
     socket.on('marker:updated', (data: any) => {
+      if (data?.deleted) {
+        useWorldStore.getState().removeMarker(data.id);
+        return;
+      }
       useWorldStore.getState().upsertMarker(data);
     });
     socket.on('zone:updated', (data: any) => {
+      if (data?.deleted) {
+        useWorldStore.getState().removeZone(data.id);
+        return;
+      }
       useWorldStore.getState().upsertZone(data);
     });
     socket.on('route:updated', (data: any) => {
+      if (data?.deleted) {
+        useWorldStore.getState().removeRoute(data.id);
+        return;
+      }
       useWorldStore.getState().upsertRoute(data);
     });
 
@@ -134,6 +177,16 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       socket.off('player:join');
       socket.off('player:leave');
       socket.off('bot:chat');
+      socket.off('command:queued', refreshCommand);
+      socket.off('command:started', refreshCommand);
+      socket.off('command:succeeded', refreshCommand);
+      socket.off('command:failed', refreshCommand);
+      socket.off('command:cancelled', refreshCommand);
+      socket.off('mission:created');
+      socket.off('mission:updated');
+      socket.off('mission:completed');
+      socket.off('mission:failed');
+      socket.off('mission:cancelled');
       socket.off('marker:created');
       socket.off('marker:updated');
       socket.off('zone:updated');

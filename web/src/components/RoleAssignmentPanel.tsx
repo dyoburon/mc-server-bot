@@ -44,6 +44,12 @@ const AUTONOMY_LEVELS = [
   { value: 'autonomous' as const, label: 'Autonomous', description: 'Acts independently within role scope' },
 ];
 
+const INTERRUPT_POLICIES = [
+  { value: 'always' as const, label: 'Always', description: 'Allow role work to replace existing activity.' },
+  { value: 'confirm-if-busy' as const, label: 'Confirm if busy', description: 'Prefer assisted behavior when another task is active.' },
+  { value: 'never-while-critical' as const, label: 'Never while critical', description: 'Do not replace critical/running work automatically.' },
+];
+
 interface RoleAssignmentPanelProps {
   botName: string;
   existingAssignment?: RoleAssignmentRecord;
@@ -56,6 +62,8 @@ export function RoleAssignmentPanel({ botName, existingAssignment, onSave, onCan
   const [autonomy, setAutonomy] = useState<'manual' | 'assisted' | 'autonomous'>(existingAssignment?.autonomyLevel || 'assisted');
   const [homeMarker, setHomeMarker] = useState(existingAssignment?.homeMarkerId || '');
   const [allowedZones, setAllowedZones] = useState<string[]>(existingAssignment?.allowedZoneIds || []);
+  const [interruptPolicy, setInterruptPolicy] = useState<'always' | 'confirm-if-busy' | 'never-while-critical'>(existingAssignment?.interruptPolicy || 'confirm-if-busy');
+  const [preferredMissionTypes, setPreferredMissionTypes] = useState<string>(existingAssignment?.preferredMissionTypes?.join(', ') || '');
   const [markers, setMarkers] = useState<MarkerRecord[]>([]);
   const [zones, setZones] = useState<ZoneRecord[]>([]);
   const [saving, setSaving] = useState(false);
@@ -70,9 +78,17 @@ export function RoleAssignmentPanel({ botName, existingAssignment, onSave, onCan
     setSaving(true);
     setError(null);
     try {
-      const payload: Partial<RoleAssignmentRecord> = { botName, role, autonomyLevel: autonomy, homeMarkerId: homeMarker || undefined, allowedZoneIds: allowedZones.length > 0 ? allowedZones : [] };
+      const payload: Partial<RoleAssignmentRecord> = {
+        botName,
+        role,
+        autonomyLevel: autonomy,
+        homeMarkerId: homeMarker || undefined,
+        allowedZoneIds: allowedZones.length > 0 ? allowedZones : [],
+        interruptPolicy,
+        preferredMissionTypes: preferredMissionTypes.split(',').map((value) => value.trim()).filter(Boolean),
+      };
       if (existingAssignment) {
-        await api.updateRoleAssignment(botName, { role, autonomyLevel: autonomy, homeMarkerId: homeMarker || undefined, allowedZoneIds: allowedZones.length > 0 ? allowedZones : [] });
+        await api.updateRoleAssignment(existingAssignment.id, payload);
       } else {
         await api.createRoleAssignment(payload);
       }
@@ -84,9 +100,9 @@ export function RoleAssignmentPanel({ botName, existingAssignment, onSave, onCan
     }
   };
 
-  const toggleZone = (zoneName: string) => {
+  const toggleZone = (zoneId: string) => {
     setAllowedZones((prev) =>
-      prev.includes(zoneName) ? prev.filter((z) => z !== zoneName) : [...prev, zoneName]
+      prev.includes(zoneId) ? prev.filter((z) => z !== zoneId) : [...prev, zoneId]
     );
   };
 
@@ -166,7 +182,7 @@ export function RoleAssignmentPanel({ botName, existingAssignment, onSave, onCan
         >
           <option value="">None</option>
           {markers.map((m) => (
-            <option key={m.name} value={m.name}>
+            <option key={m.id} value={m.id}>
               {m.name} ({Math.round(m.position.x)}, {Math.round(m.position.y)}, {Math.round(m.position.z)})
             </option>
           ))}
@@ -179,11 +195,11 @@ export function RoleAssignmentPanel({ botName, existingAssignment, onSave, onCan
           <label className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold mb-2 block">Allowed Zones</label>
           <div className="flex flex-wrap gap-1.5">
             {zones.map((z) => {
-              const selected = allowedZones.includes(z.name);
+              const selected = allowedZones.includes(z.id);
               return (
                 <button
-                  key={z.name}
-                  onClick={() => toggleZone(z.name)}
+                  key={z.id}
+                  onClick={() => toggleZone(z.id)}
                   className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all border ${
                     selected
                       ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
@@ -197,6 +213,41 @@ export function RoleAssignmentPanel({ botName, existingAssignment, onSave, onCan
           </div>
         </div>
       )}
+
+      <div>
+        <label className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold mb-2 block">Interrupt Policy</label>
+        <div className="space-y-1.5">
+          {INTERRUPT_POLICIES.map((policy) => (
+            <button
+              key={policy.value}
+              onClick={() => setInterruptPolicy(policy.value)}
+              className={`w-full text-left px-3 py-2 rounded-lg border transition-all ${
+                interruptPolicy === policy.value
+                  ? 'border-cyan-500/40 bg-cyan-500/5'
+                  : 'border-zinc-800/60 hover:border-zinc-700/60'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <span className={`w-2 h-2 rounded-full ${interruptPolicy === policy.value ? 'bg-cyan-400' : 'bg-zinc-700'}`} />
+                <span className={`text-xs font-medium ${interruptPolicy === policy.value ? 'text-cyan-400' : 'text-zinc-400'}`}>
+                  {policy.label}
+                </span>
+              </div>
+              <p className="text-[10px] text-zinc-600 ml-4">{policy.description}</p>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <label className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold mb-2 block">Preferred Mission Types</label>
+        <input
+          value={preferredMissionTypes}
+          onChange={(e) => setPreferredMissionTypes(e.target.value)}
+          placeholder="queue_task, patrol_zone"
+          className="w-full bg-zinc-800/80 border border-zinc-700/50 rounded-lg px-3 py-2 text-xs text-white"
+        />
+      </div>
 
       {/* Error */}
       {error && (

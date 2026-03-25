@@ -110,6 +110,17 @@ export function CommanderPanel({ plan, onExecute, onCancel, executing }: Props) 
         )}
       </AnimatePresence>
 
+      {(plan.warnings.length > 0 || plan.confidence < 0.65) && (
+        <div className="rounded-lg border border-zinc-700/60 bg-zinc-950/70 px-4 py-3">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-1">
+            Clarification Recommended
+          </p>
+          <p className="text-xs text-zinc-400">
+            This plan may need refinement before execution. Consider editing the request with more specific bot names, markers, zones, or exact goals.
+          </p>
+        </div>
+      )}
+
       {/* Commands */}
       {plan.commands.length > 0 && (
         <div>
@@ -179,6 +190,21 @@ export function CommanderPanel({ plan, onExecute, onCancel, executing }: Props) 
       )}
 
       {/* Actions */}
+      <div className="grid grid-cols-3 gap-2 text-center">
+        <div className="rounded-lg border border-zinc-800/60 bg-zinc-950/50 px-3 py-2">
+          <p className="text-[10px] uppercase tracking-wider text-zinc-500">Commands</p>
+          <p className="text-sm font-semibold text-zinc-200">{plan.commands.length}</p>
+        </div>
+        <div className="rounded-lg border border-zinc-800/60 bg-zinc-950/50 px-3 py-2">
+          <p className="text-[10px] uppercase tracking-wider text-zinc-500">Missions</p>
+          <p className="text-sm font-semibold text-zinc-200">{plan.missions.length}</p>
+        </div>
+        <div className="rounded-lg border border-zinc-800/60 bg-zinc-950/50 px-3 py-2">
+          <p className="text-[10px] uppercase tracking-wider text-zinc-500">Warnings</p>
+          <p className="text-sm font-semibold text-zinc-200">{plan.warnings.length}</p>
+        </div>
+      </div>
+
       <div className="flex items-center gap-3 pt-2 border-t border-zinc-800">
         <button
           onClick={handleExecute}

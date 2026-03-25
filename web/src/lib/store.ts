@@ -5,7 +5,7 @@ import type {
   BotStatus, BotEvent, WorldState,
   MarkerRecord, ZoneRecord, RouteRecord,
   SquadRecord, RoleAssignmentRecord,
-  BuildJob, SupplyChain, CommandRecord,
+  BuildJob, SupplyChain, CommandRecord, MissionRecord,
 } from './api';
 
 export interface BotLiveData extends BotStatus {
@@ -78,6 +78,7 @@ interface ControlStore {
   deselectBot: (botName: string) => void;
   clearSelection: () => void;
   selectAll: (botNames: string[]) => void;
+  setCommands: (commands: CommandRecord[]) => void;
   upsertCommand: (command: CommandRecord) => void;
 }
 
@@ -105,15 +106,21 @@ export const useControlStore = create<ControlStore>((set) => ({
     }),
   clearSelection: () => set({ selectedBotIds: new Set() }),
   selectAll: (botNames) => set({ selectedBotIds: new Set(botNames) }),
+  setCommands: (commands) => set({ commandHistory: commands }),
   upsertCommand: (command) =>
     set((state) => {
       const idx = state.commandHistory.findIndex((c) => c.id === command.id);
       if (idx >= 0) {
         const next = [...state.commandHistory];
-        next[idx] = command;
+        next[idx] = { ...next[idx], ...command };
+        next.sort((a, b) => b.createdAt - a.createdAt);
         return { commandHistory: next };
       }
-      return { commandHistory: [command, ...state.commandHistory].slice(0, 100) };
+      return {
+        commandHistory: [command, ...state.commandHistory]
+          .sort((a, b) => b.createdAt - a.createdAt)
+          .slice(0, 100),
+      };
     }),
 }));
 
@@ -351,6 +358,45 @@ export const useRoleStore = create<RoleStore>((set) => ({
     set((s) => ({ assignments: upsertById(s.assignments, assignment) })),
   removeAssignment: (id) =>
     set((s) => ({ assignments: removeById(s.assignments, id) })),
+}));
+
+interface MissionStore {
+  missions: MissionRecord[];
+  setMissions: (missions: MissionRecord[]) => void;
+  upsertMission: (mission: MissionRecord) => void;
+  removeMission: (id: string) => void;
+  getRunningForBot: (botName: string) => MissionRecord[];
+}
+
+export const useMissionStore = create<MissionStore>((set, get) => ({
+  missions: [],
+  setMissions: (missions) =>
+    set({
+      missions: [...missions].sort((a, b) => b.updatedAt - a.updatedAt),
+    }),
+  upsertMission: (mission) =>
+    set((state) => {
+      const idx = state.missions.findIndex((m) => m.id === mission.id);
+      if (idx >= 0) {
+        const next = [...state.missions];
+        next[idx] = { ...next[idx], ...mission };
+        next.sort((a, b) => b.updatedAt - a.updatedAt);
+        return { missions: next };
+      }
+      return {
+        missions: [...state.missions, mission].sort((a, b) => b.updatedAt - a.updatedAt),
+      };
+    }),
+  removeMission: (id) =>
+    set((state) => ({ missions: state.missions.filter((mission) => mission.id !== id) })),
+  getRunningForBot: (botName) => {
+    const lower = botName.toLowerCase();
+    return get().missions.filter(
+      (mission) =>
+        mission.status === 'running' &&
+        mission.assigneeIds.some((id) => id.toLowerCase() === lower),
+    );
+  },
 }));
 
 /* ─── Schematic Placement Store ─── */

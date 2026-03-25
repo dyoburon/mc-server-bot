@@ -633,17 +633,9 @@ export class MissionManager {
 
   getBotMissionQueue(botName: string): MissionRecord[] {
     const queueIds = this.botMissionQueues.get(botName) ?? [];
-    const activeMissions = queueIds
+    return queueIds
       .map((id) => this.missions.get(id))
       .filter((m): m is MissionRecord => !!m && m.status !== 'completed' && m.status !== 'cancelled' && m.status !== 'failed');
-
-    // Sort by priority (urgent first) then creation time
-    const priorityOrder: Record<MissionPriority, number> = { urgent: 0, high: 1, normal: 2, low: 3 };
-    activeMissions.sort(
-      (a, b) => priorityOrder[a.priority] - priorityOrder[b.priority] || a.createdAt - b.createdAt
-    );
-
-    return activeMissions;
   }
 
   updateBotMissionQueue(

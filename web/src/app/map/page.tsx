@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { useBotStore, useWorldStore, useSchematicPlacementStore } from '@/lib/store';
+import { useBotStore, useWorldStore, useSchematicPlacementStore, useControlStore, useFleetStore, useMissionStore } from '@/lib/store';
 import { api } from '@/lib/api';
 import type { MarkerRecord, MarkerKind, ZoneRecord, RouteRecord } from '@/lib/api';
 import { getPersonalityColor, PLAYER_COLOR, STATE_COLORS } from '@/lib/constants';
@@ -53,6 +53,7 @@ export default function MapPage() {
   const markers = useWorldStore((s) => s.markers);
   const zones = useWorldStore((s) => s.zones);
   const routes = useWorldStore((s) => s.routes);
+  const selectedMapObject = useWorldStore((s) => s.selectedMapObject);
   const mapDrawingMode = useWorldStore((s) => s.drawingMode);
   const setMarkers = useWorldStore((s) => s.setMarkers);
   const addMarker = useWorldStore((s) => s.upsertMarker);
@@ -61,6 +62,12 @@ export default function MapPage() {
   const setZones = useWorldStore((s) => s.setZones);
   const setRoutes = useWorldStore((s) => s.setRoutes);
   const setMapDrawingMode = useWorldStore((s) => s.setDrawingMode);
+  const selectedBotIds = useControlStore((s) => s.selectedBotIds);
+  const selectAllBots = useControlStore((s) => s.selectAll);
+  const clearSelection = useControlStore((s) => s.clearSelection);
+  const squads = useFleetStore((s) => s.squads);
+  const selectedSquadId = useFleetStore((s) => s.selectedSquadId);
+  const missions = useMissionStore((s) => s.missions);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -78,9 +85,15 @@ export default function MapPage() {
   const markersRef = useRef(markers);
   const zonesRef = useRef(zones);
   const routesRef = useRef(routes);
+  const selectedMapObjectRef = useRef(selectedMapObject);
+  const squadsRef = useRef(squads);
+  const selectedSquadIdRef = useRef(selectedSquadId);
+  const missionsRef = useRef(missions);
   const trails = useRef<Map<string, { x: number; z: number }[]>>(new Map());
   const entityPositions = useRef<Map<string, { sx: number; sy: number; radius: number }>>(new Map());
   const markerPositions = useRef<Map<string, { sx: number; sy: number; radius: number }>>(new Map());
+  const zonePositions = useRef<Map<string, { sx: number; sy: number; radius: number }>>(new Map());
+  const routePositions = useRef<Map<string, { sx: number; sy: number; radius: number }>>(new Map());
   const terrainCanvas = useRef<OffscreenCanvas | null>(null);
   const terrainMeta = useRef<{ cx: number; cz: number; radius: number } | null>(null);
   const initializedRef = useRef(false);
@@ -100,6 +113,8 @@ export default function MapPage() {
     defaultX?: number;
     defaultZ?: number;
   } | null>(null);
+  const [zoneEditor, setZoneEditor] = useState<{ x: number; z: number; zone?: ZoneRecord } | null>(null);
+  const [routeEditor, setRouteEditor] = useState<{ route?: RouteRecord } | null>(null);
 
   // Keep refs in sync with zustand
   botsRef.current = bots;
@@ -107,6 +122,10 @@ export default function MapPage() {
   markersRef.current = markers;
   zonesRef.current = zones;
   routesRef.current = routes;
+  selectedMapObjectRef.current = selectedMapObject;
+  squadsRef.current = squads;
+  selectedSquadIdRef.current = selectedSquadId;
+  missionsRef.current = missions;
 
   // Load markers, zones, routes on mount
   useEffect(() => {
@@ -291,10 +310,16 @@ export default function MapPage() {
         }
       }
 
+      entityPositions.current.clear();
+      markerPositions.current.clear();
+      zonePositions.current.clear();
+      routePositions.current.clear();
+
       // --- Draw zones ---
       if (show.zones) {
         for (const zone of curZones) {
           const zoneColor = ZONE_MODE_COLORS[zone.mode] || '#6B7280';
+          const isSelectedZone = selectedMapObjectRef.current?.type === 'zone' && selectedMapObjectRef.current.id === zone.id;
           let zsx = cx + offset.x;
           let zsy = cy + offset.y;
 
@@ -307,10 +332,11 @@ export default function MapPage() {
             ctx.fillStyle = zoneColor + '18';
             ctx.fill();
             ctx.strokeStyle = zoneColor + '60';
-            ctx.lineWidth = 1.5;
+            ctx.lineWidth = isSelectedZone ? 2.5 : 1.5;
             ctx.setLineDash([6, 4]);
             ctx.stroke();
             ctx.setLineDash([]);
+            zonePositions.current.set(zone.id, { sx: zsx, sy: zsy, radius: Math.max(16, sr) });
           } else if (zone.shape === 'rectangle' && zone.rectangle) {
             zsx = cx + ((zone.rectangle.minX + zone.rectangle.maxX) / 2) * scale + offset.x;
             zsy = cy + ((zone.rectangle.minZ + zone.rectangle.maxZ) / 2) * scale + offset.y;
@@ -319,10 +345,11 @@ export default function MapPage() {
             ctx.fillStyle = zoneColor + '18';
             ctx.fillRect(zsx - sw / 2, zsy - sh / 2, sw, sh);
             ctx.strokeStyle = zoneColor + '60';
-            ctx.lineWidth = 1.5;
+            ctx.lineWidth = isSelectedZone ? 2.5 : 1.5;
             ctx.setLineDash([6, 4]);
             ctx.strokeRect(zsx - sw / 2, zsy - sh / 2, sw, sh);
             ctx.setLineDash([]);
+            zonePositions.current.set(zone.id, { sx: zsx, sy: zsy, radius: Math.max(16, Math.max(sw, sh) / 2) });
           }
 
           // Zone label
@@ -340,6 +367,7 @@ export default function MapPage() {
       if (show.routes) {
         const markerById = new Map(curMarkers.map((m) => [m.id, m]));
         for (const route of curRoutes) {
+          const isSelectedRoute = selectedMapObjectRef.current?.type === 'route' && selectedMapObjectRef.current.id === route.id;
           const waypoints = route.waypointIds
             .map((id: string) => markerById.get(id))
             .filter((m): m is MarkerRecord => !!m);
@@ -348,8 +376,8 @@ export default function MapPage() {
 
           ctx.save();
           ctx.setLineDash([8, 6]);
-          ctx.strokeStyle = '#A78BFA90';
-          ctx.lineWidth = 2;
+          ctx.strokeStyle = isSelectedRoute ? '#C4B5FD' : '#A78BFA90';
+          ctx.lineWidth = isSelectedRoute ? 3 : 2;
           ctx.beginPath();
 
           for (let i = 0; i < waypoints.length; i++) {
@@ -381,6 +409,13 @@ export default function MapPage() {
             ctx.fill();
           }
 
+          const first = waypoints[0];
+          const last = waypoints[waypoints.length - 1];
+          routePositions.current.set(route.id, {
+            sx: cx + ((first.position.x + last.position.x) / 2) * scale + offset.x,
+            sy: cy + ((first.position.z + last.position.z) / 2) * scale + offset.y,
+            radius: 18,
+          });
           ctx.restore();
         }
       }
@@ -402,9 +437,6 @@ export default function MapPage() {
         }
       }
 
-      entityPositions.current.clear();
-      markerPositions.current.clear();
-
       // Trails
       if (show.trails) {
         for (const entity of entities) {
@@ -424,6 +456,7 @@ export default function MapPage() {
       }
 
       // Entity markers
+      const selectedSquad = squadsRef.current.find((squad) => squad.id === selectedSquadIdRef.current);
       for (const entity of entities) {
         const sx = cx + entity.x * scale + offset.x;
         const sy = cy + entity.z * scale + offset.y;
@@ -438,6 +471,10 @@ export default function MapPage() {
 
         if (isSelected || isHovered) {
           ctx.beginPath(); ctx.arc(sx, sy, r + 6, 0, Math.PI * 2); ctx.fillStyle = entity.color + '20'; ctx.fill();
+        }
+        if (entity.type === 'bot' && selectedSquad?.botNames.includes(entity.name)) {
+          ctx.beginPath(); ctx.arc(sx, sy, r + 8, 0, Math.PI * 2);
+          ctx.strokeStyle = '#22C55E80'; ctx.lineWidth = 2; ctx.stroke();
         }
         if (entity.type === 'bot' && entity.state && !['IDLE', 'DISCONNECTED'].includes(entity.state)) {
           ctx.beginPath(); ctx.arc(sx, sy, r + 3, 0, Math.PI * 2);
@@ -467,6 +504,28 @@ export default function MapPage() {
           ctx.fillText(`${Math.round(entity.x)}, ${Math.round(entity.z)}`, sx, sy + r + 14);
           if (entity.state) { ctx.fillStyle = STATE_COLORS[entity.state] ?? '#6B7280'; ctx.font = '9px system-ui'; ctx.fillText(entity.state, sx, sy + r + 26); }
           ctx.restore();
+        }
+
+        if (entity.type === 'bot') {
+          const activeMission = missionsRef.current.find((mission) =>
+            ['queued', 'running', 'paused'].includes(mission.status) &&
+            mission.assigneeIds.some((id) => id.toLowerCase() === entity.name.toLowerCase()),
+          );
+          if (activeMission) {
+            ctx.save();
+            ctx.fillStyle = '#111827dd';
+            ctx.strokeStyle = activeMission.source === 'role' ? '#22C55E99' : '#60A5FA99';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.roundRect(sx - 22, sy + r + 6, 44, 14, 4);
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = '#E5E7EB';
+            ctx.font = '9px system-ui, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(activeMission.type.slice(0, 10), sx, sy + r + 16);
+            ctx.restore();
+          }
         }
       }
 
@@ -558,7 +617,7 @@ export default function MapPage() {
   }, []); // Empty deps — loop runs forever, reads from refs
 
   // Find what's under a given screen position
-  const hitTest = useCallback((mx: number, my: number): { type: 'entity'; name: string } | { type: 'marker'; id: string } | null => {
+  const hitTest = useCallback((mx: number, my: number): { type: 'entity'; name: string } | { type: 'marker'; id: string } | { type: 'zone'; id: string } | { type: 'route'; id: string } | null => {
     // Check entities first
     for (const [name, pos] of entityPositions.current) {
       const dx = mx - pos.sx;
@@ -573,6 +632,20 @@ export default function MapPage() {
       const dy = my - pos.sy;
       if (dx * dx + dy * dy < pos.radius * pos.radius) {
         return { type: 'marker', id };
+      }
+    }
+    for (const [id, pos] of zonePositions.current) {
+      const dx = mx - pos.sx;
+      const dy = my - pos.sy;
+      if (dx * dx + dy * dy < pos.radius * pos.radius) {
+        return { type: 'zone', id };
+      }
+    }
+    for (const [id, pos] of routePositions.current) {
+      const dx = mx - pos.sx;
+      const dy = my - pos.sy;
+      if (dx * dx + dy * dy < pos.radius * pos.radius) {
+        return { type: 'route', id };
       }
     }
     return null;
@@ -600,11 +673,24 @@ export default function MapPage() {
     const hit = hitTest(mx, my);
     if (hit) {
       if (hit.type === 'entity') {
+        const bot = botsRef.current.find((b) => b.name === hit.name);
+        if (bot) {
+          selectAllBots([bot.name]);
+        }
         selectedRef.current = selectedRef.current === hit.name ? null : hit.name;
+      } else if (hit.type === 'marker') {
+        useWorldStore.getState().setSelectedMapObject({ type: 'marker', id: hit.id });
+      } else if (hit.type === 'zone') {
+        useWorldStore.getState().setSelectedMapObject({ type: 'zone', id: hit.id });
+      } else if (hit.type === 'route') {
+        useWorldStore.getState().setSelectedMapObject({ type: 'route', id: hit.id });
       }
       kick();
       return;
     }
+
+    useWorldStore.getState().setSelectedMapObject(null);
+    clearSelection();
 
     draggingRef.current = true;
     dragStartRef.current = { x: e.clientX - offsetRef.current.x, y: e.clientY - offsetRef.current.y };
@@ -699,10 +785,7 @@ export default function MapPage() {
 
   // Context menu action handlers
   const getSelectedBot = (): string | null => {
-    const sel = selectedRef.current;
-    if (!sel) return null;
-    const bot = botsRef.current.find((b) => b.name === sel);
-    return bot ? bot.name : null;
+    return Array.from(selectedBotIds)[0] ?? null;
   };
 
   const handleWalkHere = (x: number, z: number) => {
@@ -778,6 +861,68 @@ export default function MapPage() {
       }
     }
     setMarkerEditor(null);
+  };
+
+  const handleSaveZone = async (data: {
+    name: string;
+    mode: string;
+    shape: 'circle' | 'rectangle';
+    radius: number;
+    width: number;
+    height: number;
+  }) => {
+    if (!zoneEditor) return;
+    const payload = data.shape === 'circle'
+      ? {
+          name: data.name,
+          mode: data.mode,
+          shape: 'circle' as const,
+          circle: {
+            x: Math.round(zoneEditor.x),
+            z: Math.round(zoneEditor.z),
+            radius: Math.max(1, Math.round(data.radius)),
+          },
+        }
+      : {
+          name: data.name,
+          mode: data.mode,
+          shape: 'rectangle' as const,
+          rectangle: {
+            minX: Math.round(zoneEditor.x - data.width / 2),
+            maxX: Math.round(zoneEditor.x + data.width / 2),
+            minZ: Math.round(zoneEditor.z - data.height / 2),
+            maxZ: Math.round(zoneEditor.z + data.height / 2),
+          },
+        };
+    const result = zoneEditor?.zone
+      ? await api.updateZone(zoneEditor.zone.id, payload)
+      : await api.createZone(payload);
+    useWorldStore.getState().upsertZone(result.zone);
+    setZoneEditor(null);
+  };
+
+  const handleDeleteZone = async (zoneId: string) => {
+    await api.deleteZone(zoneId);
+    useWorldStore.getState().removeZone(zoneId);
+    if (selectedMapObject?.type === 'zone' && selectedMapObject.id === zoneId) {
+      useWorldStore.getState().setSelectedMapObject(null);
+    }
+  };
+
+  const handleDeleteRoute = async (routeId: string) => {
+    await api.deleteRoute(routeId);
+    useWorldStore.getState().removeRoute(routeId);
+    if (selectedMapObject?.type === 'route' && selectedMapObject.id === routeId) {
+      useWorldStore.getState().setSelectedMapObject(null);
+    }
+  };
+
+  const handleSaveRoute = async (data: { name: string; waypointIds: string[]; loop: boolean }) => {
+    const result = routeEditor?.route
+      ? await api.updateRoute(routeEditor.route.id, data)
+      : await api.createRoute(data);
+    useWorldStore.getState().upsertRoute(result.route);
+    setRouteEditor(null);
   };
 
   // Zoom toward cursor with normalized sensitivity
@@ -894,6 +1039,20 @@ export default function MapPage() {
           >
             + Marker
           </button>
+          <button
+            onClick={() => setZoneEditor({ x: -offsetRef.current.x / scaleRef.current, z: -offsetRef.current.y / scaleRef.current })}
+            className="px-2 py-1 rounded text-[11px] font-medium transition-colors bg-zinc-800 hover:bg-zinc-700 text-zinc-400"
+            title="Create a zone at the current view center"
+          >
+            + Zone
+          </button>
+          <button
+            onClick={() => setRouteEditor({})}
+            className="px-2 py-1 rounded text-[11px] font-medium transition-colors bg-zinc-800 hover:bg-zinc-700 text-zinc-400"
+            title="Create a route from markers"
+          >
+            + Route
+          </button>
           <span className="w-px h-4 bg-zinc-800" />
           <button
             onClick={() => {
@@ -933,9 +1092,16 @@ export default function MapPage() {
               {allEntities.map((entity) => (
                 <button
                   key={`${entity.type}-${entity.name}`}
-                  onClick={() => { centerOn(entity.x, entity.z); selectedRef.current = entity.name; kick(); }}
+                  onClick={() => {
+                    centerOn(entity.x, entity.z);
+                    selectedRef.current = entity.name;
+                    if (entity.type === 'bot') {
+                      selectAllBots([entity.name]);
+                    }
+                    kick();
+                  }}
                   className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left transition-colors ${
-                    selectedRef.current === entity.name ? 'bg-zinc-800' : 'hover:bg-zinc-800/50'
+                    selectedRef.current === entity.name || selectedBotIds.has(entity.name) ? 'bg-zinc-800' : 'hover:bg-zinc-800/50'
                   }`}
                 >
                   <span className={`w-2.5 h-2.5 shrink-0 ${entity.type === 'player' ? 'rounded-sm' : 'rounded-full'}`} style={{ backgroundColor: entity.color }} />
@@ -962,7 +1128,11 @@ export default function MapPage() {
                 {markers.filter((m) => m.position).map((marker) => (
                   <button
                     key={marker.id}
-                    onClick={() => { centerOn(marker.position.x, marker.position.z); kick(); }}
+                    onClick={() => {
+                      centerOn(marker.position.x, marker.position.z);
+                      useWorldStore.getState().setSelectedMapObject({ type: 'marker', id: marker.id });
+                      kick();
+                    }}
                     className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left transition-colors hover:bg-zinc-800/50"
                   >
                     <span
@@ -980,6 +1150,103 @@ export default function MapPage() {
                       {marker.kind.slice(0, 3)}
                     </span>
                   </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {zones.length > 0 && (
+            <div className="p-3 border-t border-zinc-800/60">
+              <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider mb-2">
+                Zones ({zones.length})
+              </p>
+              <div className="space-y-0.5">
+                {zones.map((zone) => (
+                  <div
+                    key={zone.id}
+                    className={`flex items-center gap-2 px-2 py-1.5 rounded-md transition-colors ${selectedMapObject?.type === 'zone' && selectedMapObject.id === zone.id ? 'bg-zinc-800' : 'hover:bg-zinc-800/50'}`}
+                  >
+                    <button
+                      onClick={() => {
+                        useWorldStore.getState().setSelectedMapObject({ type: 'zone', id: zone.id });
+                        const center = zone.shape === 'circle' && zone.circle
+                          ? { x: zone.circle.x, z: zone.circle.z }
+                          : zone.rectangle
+                            ? { x: (zone.rectangle.minX + zone.rectangle.maxX) / 2, z: (zone.rectangle.minZ + zone.rectangle.maxZ) / 2 }
+                            : { x: 0, z: 0 };
+                        centerOn(center.x, center.z);
+                        kick();
+                      }}
+                      className="flex items-center gap-2 text-left flex-1 min-w-0"
+                    >
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: ZONE_MODE_COLORS[zone.mode] || '#6B7280' }} />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[11px] font-medium text-zinc-300 truncate">{zone.name}</p>
+                        <p className="text-[9px] text-zinc-600 uppercase">{zone.mode} {zone.shape}</p>
+                      </div>
+                    </button>
+                    <button onClick={() => {
+                      const center = zone.shape === 'circle' && zone.circle
+                        ? { x: zone.circle.x, z: zone.circle.z }
+                        : zone.rectangle
+                          ? { x: (zone.rectangle.minX + zone.rectangle.maxX) / 2, z: (zone.rectangle.minZ + zone.rectangle.maxZ) / 2 }
+                          : { x: 0, z: 0 };
+                      setZoneEditor({ ...center, zone });
+                    }} className="text-[10px] text-zinc-500 hover:text-zinc-300">Edit</button>
+                    <button onClick={() => handleDeleteZone(zone.id)} className="text-[10px] text-zinc-600 hover:text-red-400">Del</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {routes.length > 0 && (
+            <div className="p-3 border-t border-zinc-800/60">
+              <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider mb-2">
+                Routes ({routes.length})
+              </p>
+              <div className="space-y-0.5">
+                {routes.map((route) => (
+                  <div
+                    key={route.id}
+                    className={`flex items-center gap-2 px-2 py-1.5 rounded-md transition-colors ${selectedMapObject?.type === 'route' && selectedMapObject.id === route.id ? 'bg-zinc-800' : 'hover:bg-zinc-800/50'}`}
+                  >
+                    <button
+                      onClick={() => {
+                        useWorldStore.getState().setSelectedMapObject({ type: 'route', id: route.id });
+                        const firstMarker = markers.find((marker) => marker.id === route.waypointIds[0]);
+                        if (firstMarker) {
+                          centerOn(firstMarker.position.x, firstMarker.position.z);
+                        }
+                        kick();
+                      }}
+                      className="flex items-center gap-2 text-left flex-1 min-w-0"
+                    >
+                      <span className="w-2.5 h-2.5 rounded-sm shrink-0 bg-violet-400" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[11px] font-medium text-zinc-300 truncate">{route.name}</p>
+                        <p className="text-[9px] text-zinc-600">{route.waypointIds.length} waypoints{route.loop ? ' - loop' : ''}</p>
+                      </div>
+                    </button>
+                    <button onClick={() => setRouteEditor({ route })} className="text-[10px] text-zinc-500 hover:text-zinc-300">Edit</button>
+                    <button onClick={() => handleDeleteRoute(route.id)} className="text-[10px] text-zinc-600 hover:text-red-400">Del</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {missions.length > 0 && (
+            <div className="p-3 border-t border-zinc-800/60">
+              <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider mb-2">
+                Active Missions ({missions.filter((mission) => ['queued', 'running', 'paused'].includes(mission.status)).length})
+              </p>
+              <div className="space-y-1">
+                {missions.filter((mission) => ['queued', 'running', 'paused'].includes(mission.status)).slice(0, 8).map((mission) => (
+                  <div key={mission.id} className="px-2 py-1.5 rounded-md bg-zinc-900/60 border border-zinc-800/50">
+                    <p className="text-[11px] text-zinc-300 truncate">{mission.title}</p>
+                    <p className="text-[9px] text-zinc-600 truncate">{mission.assigneeIds.join(', ')} - {mission.source}</p>
+                  </div>
                 ))}
               </div>
             </div>
@@ -1044,6 +1311,29 @@ export default function MapPage() {
               />
             </div>
           )}
+
+          {zoneEditor && (
+            <div className="absolute top-4 right-4 z-40">
+              <ZoneEditor
+                defaultX={zoneEditor.x}
+                defaultZ={zoneEditor.z}
+                zone={zoneEditor.zone}
+                onSave={handleSaveZone}
+                onCancel={() => setZoneEditor(null)}
+              />
+            </div>
+          )}
+
+          {routeEditor && (
+            <div className="absolute top-4 right-4 z-40">
+              <RouteEditor
+                markers={markers}
+                route={routeEditor.route}
+                onSave={handleSaveRoute}
+                onCancel={() => setRouteEditor(null)}
+              />
+            </div>
+          )}
         </div>
       </div>
 
@@ -1057,8 +1347,20 @@ export default function MapPage() {
           onClose={() => setContextMenu(null)}
           onWalkHere={handleWalkHere}
           onCreateMarker={handleCreateMarker}
+          onCreateZone={(x, z) => setZoneEditor({ x, z })}
           onCopyCoords={handleCopyCoords}
           onFollow={handleFollow}
+          onMoveToMarker={(marker) => {
+            const botName = getSelectedBot();
+            if (!botName) return;
+            api.createCommand({
+              type: 'move_to_marker',
+              targets: [botName],
+              scope: 'bot',
+              source: 'map',
+              payload: { markerId: marker.id },
+            }).catch(() => {});
+          }}
           onEditMarker={handleEditMarker}
           onDeleteMarker={handleDeleteMarker}
         />
@@ -1088,6 +1390,106 @@ function LegendItem({ shape, color, label }: { shape: 'circle' | 'square' | 'dia
         }}
       />
       <span className="text-zinc-400">{label}</span>
+    </div>
+  );
+}
+
+function ZoneEditor({
+  defaultX,
+  defaultZ,
+  zone,
+  onSave,
+  onCancel,
+}: {
+  defaultX: number;
+  defaultZ: number;
+  zone?: ZoneRecord;
+  onSave: (data: { name: string; mode: string; shape: 'circle' | 'rectangle'; radius: number; width: number; height: number }) => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState(zone?.name ?? '');
+  const [mode, setMode] = useState<'guard' | 'avoid' | 'farm' | 'build' | 'gather' | 'custom'>((zone?.mode as 'guard' | 'avoid' | 'farm' | 'build' | 'gather' | 'custom') ?? 'guard');
+  const [shape, setShape] = useState<'circle' | 'rectangle'>(zone?.shape ?? 'circle');
+  const [radius, setRadius] = useState(zone?.circle?.radius ?? 16);
+  const [width, setWidth] = useState(zone?.rectangle ? zone.rectangle.maxX - zone.rectangle.minX : 24);
+  const [height, setHeight] = useState(zone?.rectangle ? zone.rectangle.maxZ - zone.rectangle.minZ : 24);
+
+  return (
+    <div className="bg-zinc-900/95 border border-zinc-700/60 rounded-lg shadow-xl p-4 w-72">
+      <h3 className="text-[12px] font-semibold text-zinc-300 mb-3">{zone ? 'Edit Zone' : 'Create Zone'}</h3>
+      <div className="space-y-2.5">
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Zone name..." className="w-full bg-zinc-800 border border-zinc-700/60 rounded px-2 py-1.5 text-[12px] text-zinc-200" />
+        <div className="grid grid-cols-2 gap-2">
+          <select value={mode} onChange={(e) => setMode(e.target.value as typeof mode)} className="bg-zinc-800 border border-zinc-700/60 rounded px-2 py-1.5 text-[12px] text-zinc-200">
+            <option value="guard">guard</option>
+            <option value="avoid">avoid</option>
+            <option value="farm">farm</option>
+            <option value="build">build</option>
+            <option value="gather">gather</option>
+            <option value="custom">custom</option>
+          </select>
+          <select value={shape} onChange={(e) => setShape(e.target.value as typeof shape)} className="bg-zinc-800 border border-zinc-700/60 rounded px-2 py-1.5 text-[12px] text-zinc-200">
+            <option value="circle">circle</option>
+            <option value="rectangle">rectangle</option>
+          </select>
+        </div>
+        <p className="text-[10px] text-zinc-500">Center: {Math.round(defaultX)}, {Math.round(defaultZ)}</p>
+        {shape === 'circle' ? (
+          <input type="number" value={radius} onChange={(e) => setRadius(Number(e.target.value))} placeholder="Radius" className="w-full bg-zinc-800 border border-zinc-700/60 rounded px-2 py-1.5 text-[12px] text-zinc-200" />
+        ) : (
+          <div className="grid grid-cols-2 gap-2">
+            <input type="number" value={width} onChange={(e) => setWidth(Number(e.target.value))} placeholder="Width" className="bg-zinc-800 border border-zinc-700/60 rounded px-2 py-1.5 text-[12px] text-zinc-200" />
+            <input type="number" value={height} onChange={(e) => setHeight(Number(e.target.value))} placeholder="Height" className="bg-zinc-800 border border-zinc-700/60 rounded px-2 py-1.5 text-[12px] text-zinc-200" />
+          </div>
+        )}
+        <div className="flex gap-2 pt-1">
+          <button onClick={() => name.trim() && onSave({ name: name.trim(), mode, shape, radius, width, height })} className="flex-1 px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-medium transition-colors">{zone ? 'Update' : 'Create'}</button>
+          <button onClick={onCancel} className="flex-1 px-3 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-400 text-[11px] font-medium transition-colors">Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RouteEditor({
+  markers,
+  route,
+  onSave,
+  onCancel,
+}: {
+  markers: MarkerRecord[];
+  route?: RouteRecord;
+  onSave: (data: { name: string; waypointIds: string[]; loop: boolean }) => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState(route?.name ?? '');
+  const [loop, setLoop] = useState(route?.loop ?? false);
+  const [waypointIds, setWaypointIds] = useState<string[]>(route?.waypointIds ?? []);
+
+  const toggleWaypoint = (id: string) => {
+    setWaypointIds((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id]);
+  };
+
+  return (
+    <div className="bg-zinc-900/95 border border-zinc-700/60 rounded-lg shadow-xl p-4 w-80">
+      <h3 className="text-[12px] font-semibold text-zinc-300 mb-3">{route ? 'Edit Route' : 'Create Route'}</h3>
+      <div className="space-y-2.5">
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Route name..." className="w-full bg-zinc-800 border border-zinc-700/60 rounded px-2 py-1.5 text-[12px] text-zinc-200" />
+        <label className="flex items-center gap-2 text-[11px] text-zinc-400"><input type="checkbox" checked={loop} onChange={(e) => setLoop(e.target.checked)} /> Loop route</label>
+        <div className="max-h-48 overflow-y-auto space-y-1 rounded border border-zinc-800/60 p-2 bg-zinc-950/60">
+          {markers.map((marker) => (
+            <label key={marker.id} className="flex items-center gap-2 text-[11px] text-zinc-300">
+              <input type="checkbox" checked={waypointIds.includes(marker.id)} onChange={() => toggleWaypoint(marker.id)} />
+              <span>{marker.name}</span>
+            </label>
+          ))}
+          {markers.length === 0 && <p className="text-[11px] text-zinc-600">No markers available</p>}
+        </div>
+        <div className="flex gap-2 pt-1">
+          <button onClick={() => name.trim() && waypointIds.length > 0 && onSave({ name: name.trim(), waypointIds, loop })} className="flex-1 px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-medium transition-colors">{route ? 'Update' : 'Create'}</button>
+          <button onClick={onCancel} className="flex-1 px-3 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-400 text-[11px] font-medium transition-colors">Cancel</button>
+        </div>
+      </div>
     </div>
   );
 }

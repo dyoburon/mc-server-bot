@@ -1,10 +1,12 @@
 'use client';
 
 import { useState, useRef, useCallback, type KeyboardEvent } from 'react';
+import { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api, type CommanderPlan, type CommanderResult } from '@/lib/api';
 import { PageHeader } from '@/components/PageHeader';
 import { CommanderPanel } from '@/components/CommanderPanel';
+import { useControlStore, useMissionStore } from '@/lib/store';
 
 const EXAMPLE_PROMPTS = [
   'Send all guards to the village',
@@ -12,6 +14,9 @@ const EXAMPLE_PROMPTS = [
   'Pause every bot except builders',
   'Move the miners to the mine marker',
 ];
+
+const DRAFT_KEY = 'commander-draft';
+const HISTORY_KEY = 'commander-history';
 
 interface HistoryEntry {
   input: string;
@@ -21,6 +26,8 @@ interface HistoryEntry {
 }
 
 export default function CommanderPage() {
+  const recentCommands = useControlStore((s) => s.commandHistory.filter((command) => command.source === 'api').slice(0, 5));
+  const recentMissions = useMissionStore((s) => s.missions.filter((mission) => mission.source === 'commander').slice(0, 5));
   const [input, setInput] = useState('');
   const [parsing, setParsing] = useState(false);
   const [plan, setPlan] = useState<CommanderPlan | null>(null);
@@ -30,6 +37,32 @@ export default function CommanderPage() {
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [expandedHistory, setExpandedHistory] = useState<number | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const savedDraft = window.localStorage.getItem(DRAFT_KEY);
+    const savedHistory = window.localStorage.getItem(HISTORY_KEY);
+    if (savedDraft) {
+      setInput(savedDraft);
+    }
+    if (savedHistory) {
+      try {
+        setHistory(JSON.parse(savedHistory) as HistoryEntry[]);
+      } catch {
+        // ignore invalid local storage
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(DRAFT_KEY, input);
+  }, [input]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, 20)));
+  }, [history]);
 
   const handleParse = useCallback(async () => {
     if (!input.trim() || parsing) return;
@@ -96,6 +129,19 @@ export default function CommanderPage() {
   const autoGrow = (el: HTMLTextAreaElement) => {
     el.style.height = 'auto';
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  };
+
+  const restoreHistoryEntry = (entry: HistoryEntry) => {
+    setInput(entry.input);
+    setPlan(entry.plan);
+    setResult(entry.result ?? null);
+    setError(null);
+    requestAnimationFrame(() => {
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+        autoGrow(textareaRef.current);
+      }
+    });
   };
 
   return (
@@ -405,6 +451,20 @@ export default function CommanderPage() {
                               ))}
                             </div>
                           )}
+                          <div className="flex items-center gap-2 pt-2 border-t border-zinc-800/50">
+                            <button
+                              onClick={() => restoreHistoryEntry(entry)}
+                              className="text-[11px] text-cyan-400 hover:text-cyan-300 transition-colors"
+                            >
+                              Restore to editor
+                            </button>
+                            <button
+                              onClick={() => handleExampleClick(entry.input)}
+                              className="text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors"
+                            >
+                              Reuse input only
+                            </button>
+                          </div>
                         </div>
                       </motion.div>
                     )}
@@ -412,6 +472,34 @@ export default function CommanderPage() {
                 </motion.div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {(recentCommands.length > 0 || recentMissions.length > 0) && (
+        <div className="space-y-3">
+          <h2 className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">
+            Shared Control Activity
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="bg-zinc-900/60 border border-zinc-800/60 rounded-lg p-4 space-y-2">
+              <p className="text-[10px] text-zinc-600 uppercase tracking-wider">Recent Commands</p>
+              {recentCommands.map((command) => (
+                <div key={command.id} className="text-xs text-zinc-300 flex items-center justify-between gap-2">
+                  <span className="truncate">{command.type} - {command.targets.join(', ')}</span>
+                  <span className="text-zinc-500">{command.status}</span>
+                </div>
+              ))}
+            </div>
+            <div className="bg-zinc-900/60 border border-zinc-800/60 rounded-lg p-4 space-y-2">
+              <p className="text-[10px] text-zinc-600 uppercase tracking-wider">Recent Missions</p>
+              {recentMissions.map((mission) => (
+                <div key={mission.id} className="text-xs text-zinc-300 flex items-center justify-between gap-2">
+                  <span className="truncate">{mission.title}</span>
+                  <span className="text-zinc-500">{mission.status}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}

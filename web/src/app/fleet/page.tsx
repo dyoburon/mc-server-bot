@@ -11,7 +11,6 @@ export default function FleetPage() {
   const squads = useFleetStore((s) => s.squads);
   const selectedSquadId = useFleetStore((s) => s.selectedSquadId);
   const selectSquad = useFleetStore((s) => s.selectSquad);
-  const addSquad = useFleetStore((s) => s.addSquad);
   const removeSquad = useFleetStore((s) => s.removeSquad);
   const selectedBotIds = useControlStore((s) => s.selectedBotIds);
   const toggleBotSelection = useControlStore((s) => s.toggleBotSelection);
@@ -88,7 +87,10 @@ export default function FleetPage() {
                   squad={squad}
                   isSelected={squad.id === selectedSquadId}
                   onSelect={() => selectSquad(squad.id === selectedSquadId ? null : squad.id)}
-                  onDelete={() => removeSquad(squad.id)}
+                  onDelete={async () => {
+                    await api.deleteSquad(squad.id);
+                    removeSquad(squad.id);
+                  }}
                 />
               ))}
             </div>
@@ -186,7 +188,7 @@ function CreateSquadForm({
 }) {
   const [name, setName] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const addSquad = useFleetStore((s) => s.addSquad);
+  const [saving, setSaving] = useState(false);
 
   const toggleBot = (botName: string) => {
     const next = new Set(selected);
@@ -195,10 +197,16 @@ function CreateSquadForm({
     setSelected(next);
   };
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!name.trim() || selected.size === 0) return;
-    const squad = addSquad(name.trim(), Array.from(selected));
-    onCreated(squad);
+    setSaving(true);
+    try {
+      const result = await api.createSquad({ name: name.trim(), botNames: Array.from(selected) });
+      useFleetStore.getState().upsertSquad(result.squad);
+      onCreated(result.squad as Squad);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -235,10 +243,10 @@ function CreateSquadForm({
       </div>
       <button
         onClick={handleCreate}
-        disabled={!name.trim() || selected.size === 0}
+        disabled={saving || !name.trim() || selected.size === 0}
         className="w-full text-xs font-medium py-2 rounded-lg bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
       >
-        Create Squad ({selected.size} bot{selected.size !== 1 ? 's' : ''})
+        {saving ? 'Creating...' : `Create Squad (${selected.size} bot${selected.size !== 1 ? 's' : ''})`}
       </button>
     </div>
   );
@@ -319,24 +327,39 @@ function SquadDetail({
   const handleBatchAction = async (action: 'stop' | 'pause' | 'resume') => {
     setActionLoading(action);
     try {
-      await Promise.all(
-        squad.botNames.map((name) => {
-          if (action === 'stop') return api.stopBot(name);
-          if (action === 'pause') return api.pauseBot(name);
-          return api.resumeBot(name);
-        }),
-      );
+      const type = action === 'stop'
+        ? 'stop_movement'
+        : action === 'pause'
+          ? 'pause_voyager'
+          : 'resume_voyager';
+      await api.createCommand({
+        type,
+        targets: squad.botNames,
+        scope: 'selection',
+        source: 'dashboard',
+      });
     } catch {
       // ignore individual failures
     }
     setActionLoading(null);
   };
 
-  const saveName = () => {
+  const saveName = async () => {
     if (nameValue.trim() && nameValue.trim() !== squad.name) {
-      updateSquad(squad.id, { name: nameValue.trim() });
+      const result = await api.updateSquad(squad.id, { name: nameValue.trim() });
+      updateSquad(squad.id, { name: result.squad.name });
     }
     setEditingName(false);
+  };
+
+  const handleAddBot = async (botName: string) => {
+    await api.addSquadMember(squad.id, botName);
+    addBotToSquad(squad.id, botName);
+  };
+
+  const handleRemoveBot = async (botName: string) => {
+    await api.removeSquadMember(squad.id, botName);
+    removeBotFromSquad(squad.id, botName);
   };
 
   return (
@@ -425,7 +448,7 @@ function SquadDetail({
                 {nonMembers.map((bot) => (
                   <button
                     key={bot.name}
-                    onClick={() => addBotToSquad(squad.id, bot.name)}
+                    onClick={() => handleAddBot(bot.name)}
                     className="text-[11px] px-2.5 py-1 rounded-md border border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-emerald-500/40 hover:text-emerald-400 transition-colors"
                   >
                     + {bot.name}
@@ -455,7 +478,7 @@ function SquadDetail({
                   <span className="text-sm text-white font-medium">{name}</span>
                 </div>
                 <button
-                  onClick={() => removeBotFromSquad(squad.id, name)}
+                  onClick={() => handleRemoveBot(name)}
                   className="text-zinc-600 hover:text-red-400 transition-colors p-1"
                   title="Remove from squad"
                 >
