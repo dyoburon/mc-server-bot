@@ -46,15 +46,15 @@ instincts:
 
 voyager:
   enabled: true
-  taskCooldownMs: 10000
+  taskCooldownMs: 2000
   maxRetriesPerTask: 3
   codeExecutionTimeoutMs: 300000
   curriculumLLMCalls: true
   criticLLMCalls: true
 
 llm:
-  provider: "anthropic"
-  model: "claude-haiku-4-5"
+  provider: "gemini"
+  model: "gemini-3-flash-preview"
   temperature: 0.7
   chatMaxTokens: 2048
   codeGenMaxTokens: 8192

@@ -1,4 +1,4 @@
-async function mineOneOakLog(bot) {
+async function mineTheNearestOakLog(bot) {
   const oakLog = bot.findBlock({
     matching: b => b.name === 'oak_log',
     maxDistance: 32

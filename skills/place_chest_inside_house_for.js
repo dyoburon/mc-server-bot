@@ -18,17 +18,59 @@ async function placeChestInsideHouse(bot) {
     await craftItem('chest', 1);
   }
 
-  // Find a good location inside the house to place the chest
-  // Use crafting table location as reference: 881, 73, 223
-  const targetPos = {
+  // The chest at 881, 74, 223 is already placed outside
+  // We need to place a new chest INSIDE the house
+  // Crafting table is at 881, 73, 223 - try placing chest nearby inside
+
+  // Try positions inside the house structure
+  const interiorPositions = [{
     x: 881,
     y: 74,
+    z: 222
+  },
+  // One block south
+  {
+    x: 880,
+    y: 74,
     z: 223
-  };
+  },
+  // One block west
+  {
+    x: 882,
+    y: 74,
+    z: 223
+  },
+  // One block east
+  {
+    x: 881,
+    y: 74,
+    z: 224
+  },
+  // One block north
+  {
+    x: 880,
+    y: 74,
+    z: 222
+  },
+  // Southwest
+  {
+    x: 882,
+    y: 74,
+    z: 222
+  } // Southeast
+  ];
+  for (const pos of interiorPositions) {
+    try {
+      await moveTo(pos.x, pos.y, pos.z, 2, 10);
+      await placeItem('chest', pos.x, pos.y, pos.z);
+      return; // Successfully placed
+    } catch (e) {
+      // Position occupied or unreachable, try next
+      continue;
+    }
+  }
 
-  // Move to the target position with a range of 3 blocks
-  await moveTo(targetPos.x, targetPos.y, targetPos.z, 3, 30);
-
-  // Place the chest at the target location
-  await placeItem('chest', targetPos.x, targetPos.y, targetPos.z);
+  // If all interior positions failed, try placing at current position
+  const currentPos = bot.entity.position;
+  await placeItem('chest', Math.floor(currentPos.x), Math.floor(currentPos.y), Math.floor(currentPos.z) - 1);
 }

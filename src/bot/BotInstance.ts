@@ -135,20 +135,9 @@ export class BotInstance {
         // Set up pathfinder movements
         const mcData = require('minecraft-data')(this.bot.version);
         const movements = new Movements(this.bot);
-        movements.canDig = false; // Don't destroy blocks while pathfinding
+        movements.canDig = true; // Allow digging to escape holes (matches original Voyager)
         this.bot.pathfinder.setMovements(movements);
-        (this.bot.pathfinder as any).searchRadius = 64; // Cap A* search to prevent OOM on unreachable goals
-        (this.bot.pathfinder as any).thinkTimeout = 2000; // Reduce from 5s default to limit node accumulation
-        (this.bot.pathfinder as any).tickTimeout = 40; // Default — safe now that each bot has its own worker thread
-
-        // Override collectBlock's movements so it doesn't reset canDig=true on every collect() call
-        if ((this.bot as any).collectBlock) {
-          const cbMovements = new Movements(this.bot);
-          cbMovements.canDig = false;
-          (this.bot as any).collectBlock.movements = cbMovements;
-        }
-
-        logger.info({ bot: this.name, canDig: movements.canDig, tickTimeout: 40 }, 'Pathfinder movements configured');
+        logger.info({ bot: this.name, canDig: movements.canDig }, 'Pathfinder movements configured');
 
         // Auto-dismount to prevent physicsTick from stopping (matches original Voyager)
         // Use once + re-register pattern to avoid accumulating listeners on respawn

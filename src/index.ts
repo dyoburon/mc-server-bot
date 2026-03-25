@@ -68,6 +68,11 @@ async function main() {
   // Set up real-time Socket.IO event broadcasting
   setupSocketEvents(botManager, io, eventLog);
 
+  // Decay hostility over time — every 60s, nudge affinities 1 point toward default
+  setInterval(() => {
+    botManager.getAffinityManager().decayTowardDefault();
+  }, 60000);
+
   const formatMb = (bytes: number) => Number((bytes / 1024 / 1024).toFixed(1));
   const captureHeapSnapshot = (thresholdMb: number, heapUsedMb: number) => {
     try {

@@ -1,56 +1,135 @@
 async function buildRoofUsingOakSlabs(bot) {
   // First, we need oak slabs to build the roof
-  // Check current oak_slabs inventory
+  // Check current oak_slab inventory
   let slabsItem = bot.inventory.items().find(i => i.name === 'oak_slab');
   let slabCount = slabsItem ? slabsItem.count : 0;
 
   // Estimate slabs needed for a roof over 4 walls
-  // Assuming a 5x5 structure (4 walls around current position), we need roughly 16-20 slabs
+  // Assuming a 5x5 structure (4 walls around current position), we need roughly 20 slabs
   if (slabCount < 20) {
     // Check if we have oak planks to craft slabs
     let planksItem = bot.inventory.items().find(i => i.name === 'oak_planks');
     let plankCount = planksItem ? planksItem.count : 0;
 
-    // Need 10 planks to make 20 slabs (2 planks = 3 slabs, so 7 planks ≈ 20 slabs)
+    // Need 10 planks to make 20 slabs (3 planks = 6 slabs)
     if (plankCount < 10) {
       // Check if we have oak logs to craft planks
       let logsItem = bot.inventory.items().find(i => i.name === 'oak_log');
       let logCount = logsItem ? logsItem.count : 0;
 
-      // Need 3 logs to make 12 planks
-      if (logCount < 3) {
+      // Need 4 logs to make 16 planks
+      if (logCount < 4) {
+        // Find and mine oak logs
         let logBlock = bot.findBlock({
           matching: b => b.name === 'oak_log',
           maxDistance: 32
         });
         if (!logBlock) {
-          await exploreUntil(new Vec3(1, 0, 1), 60000, () => bot.findBlock({
-            matching: b => b.name === 'oak_log',
-            maxDistance: 32
-          }));
+          // Explore to find oak logs
+          logBlock = await exploreUntil('forward', 30000, () => {
+            return bot.findBlock({
+              matching: b => b.name === 'oak_log',
+              maxDistance: 32
+            });
+          });
         }
-        await mineBlock('oak_log', 3 - logCount);
+        if (logBlock) {
+          await mineBlock('oak_log', 4);
+        }
       }
 
-      // Craft oak planks
-      await craftItem('oak_planks', 10 - plankCount);
+      // Craft planks from logs
+      await craftItem('oak_planks', 10);
     }
 
-    // Craft oak slabs from planks
-    await craftItem('oak_slab', 20 - slabCount);
+    // Craft slabs from planks
+    await craftItem('oak_slab', 20);
   }
 
-  // Build the roof: place oak slabs on top of the walls
-  // Assuming walls are at height 3 (blocks at y+1, y+2, y+3), roof goes at y+4
-  const baseY = bot.entity.position.y + 2;
-  const roofY = baseY + 3;
-  const centerX = Math.floor(bot.entity.position.x);
-  const centerZ = Math.floor(bot.entity.position.z);
+  // Now place the oak slabs on top of the walls
+  // Assuming 4 walls at height 3, we place slabs at height 4
+  const basePos = bot.entity.position;
+  const centerX = Math.floor(basePos.x);
+  const centerY = Math.floor(basePos.y);
+  const centerZ = Math.floor(basePos.z);
 
-  // Place slabs in a square pattern covering the roof area (5x5)
-  for (let x = centerX - 2; x <= centerX + 2; x++) {
-    for (let z = centerZ - 2; z <= centerZ + 2; z++) {
-      await placeItem('oak_slab', x, roofY, z);
-    }
+  // Define the 4 roof positions (top of walls in a 5x5 pattern)
+  const roofPositions = [
+  // North wall (z - 2)
+  {
+    x: centerX - 2,
+    y: centerY + 3,
+    z: centerZ - 2
+  }, {
+    x: centerX - 1,
+    y: centerY + 3,
+    z: centerZ - 2
+  }, {
+    x: centerX,
+    y: centerY + 3,
+    z: centerZ - 2
+  }, {
+    x: centerX + 1,
+    y: centerY + 3,
+    z: centerZ - 2
+  }, {
+    x: centerX + 2,
+    y: centerY + 3,
+    z: centerZ - 2
+  },
+  // South wall (z + 2)
+  {
+    x: centerX - 2,
+    y: centerY + 3,
+    z: centerZ + 2
+  }, {
+    x: centerX - 1,
+    y: centerY + 3,
+    z: centerZ + 2
+  }, {
+    x: centerX,
+    y: centerY + 3,
+    z: centerZ + 2
+  }, {
+    x: centerX + 1,
+    y: centerY + 3,
+    z: centerZ + 2
+  }, {
+    x: centerX + 2,
+    y: centerY + 3,
+    z: centerZ + 2
+  },
+  // East wall (x + 2)
+  {
+    x: centerX + 2,
+    y: centerY + 3,
+    z: centerZ - 1
+  }, {
+    x: centerX + 2,
+    y: centerY + 3,
+    z: centerZ
+  }, {
+    x: centerX + 2,
+    y: centerY + 3,
+    z: centerZ + 1
+  },
+  // West wall (x - 2)
+  {
+    x: centerX - 2,
+    y: centerY + 3,
+    z: centerZ - 1
+  }, {
+    x: centerX - 2,
+    y: centerY + 3,
+    z: centerZ
+  }, {
+    x: centerX - 2,
+    y: centerY + 3,
+    z: centerZ + 1
+  }];
+
+  // Place oak slabs on roof positions
+  for (const pos of roofPositions) {
+    await placeItem('oak_slab', pos.x, pos.y, pos.z);
   }
 }

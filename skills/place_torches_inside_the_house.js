@@ -1,14 +1,16 @@
 async function placeTorchesInsideHouse(bot) {
-  // Check if we have torches in inventory
+  // Check current torch inventory
   let torchItem = bot.inventory.items().find(i => i.name === 'torch');
   let torchCount = torchItem ? torchItem.count : 0;
 
-  // If we don't have enough torches, we need to craft them
+  // If we don't have torches, craft them
   if (torchCount < 8) {
-    // Check if we have coal and sticks
+    // Check for coal
     const coalItem = bot.inventory.items().find(i => i.name === 'coal');
-    const stickItem = bot.inventory.items().find(i => i.name === 'stick');
     let coalCount = coalItem ? coalItem.count : 0;
+
+    // Check for sticks
+    const stickItem = bot.inventory.items().find(i => i.name === 'stick');
     let stickCount = stickItem ? stickItem.count : 0;
 
     // Mine coal if needed
@@ -22,54 +24,37 @@ async function placeTorchesInsideHouse(bot) {
       if (!logItem) {
         await mineBlock('oak_log', 1);
       }
-      // Craft sticks from logs (2 sticks per log)
+      // Craft sticks from logs
       await craftItem('stick', 8 - stickCount);
     }
 
-    // Move to crafting table at 881, 73, 223
-    await moveTo(881, 73, 223, 3, 30);
-
-    // Craft torches (coal + 8 sticks = 8 torches)
+    // Craft torches (1 coal + 8 sticks = 8 torches)
     await craftItem('torch', 8);
   }
 
-  // Now place torches around the house interior
-  // Place torches at strategic interior locations for lighting
+  // Place torches inside the house at strategic locations
+  // Placing torches around interior walls for lighting
   const torchPositions = [{
-    x: 882,
-    y: 74,
-    z: 220
+    x: 933,
+    y: 77,
+    z: 208
   }, {
-    x: 886,
-    y: 74,
-    z: 220
+    x: 933,
+    y: 77,
+    z: 212
   }, {
-    x: 886,
-    y: 74,
-    z: 216
+    x: 937,
+    y: 77,
+    z: 208
   }, {
-    x: 882,
-    y: 74,
-    z: 216
+    x: 937,
+    y: 77,
+    z: 212
   }, {
-    x: 884,
-    y: 74,
-    z: 218
-  }, {
-    x: 880,
-    y: 74,
-    z: 218
-  }, {
-    x: 888,
-    y: 74,
-    z: 218
-  }, {
-    x: 884,
-    y: 76,
-    z: 220
+    x: 935,
+    y: 77,
+    z: 210
   }];
-
-  // Place each torch
   for (const pos of torchPositions) {
     await placeItem('torch', pos.x, pos.y, pos.z);
   }
