@@ -1,12 +1,11 @@
 import { Server as SocketIOServer } from 'socket.io';
 import { BotManager } from '../bot/BotManager';
-import { BotInstance } from '../bot/BotInstance';
 import { EventLog } from './EventLog';
 import { logger } from '../util/logger';
 
 /**
- * Sets up real-time event broadcasting from bot instances to connected dashboard clients.
- * Polls bot state and emits changes via Socket.IO.
+ * Sets up real-time event broadcasting from bot workers to connected dashboard clients.
+ * Reads cached state from WorkerHandles and emits changes via Socket.IO.
  */
 export function setupSocketEvents(
   botManager: BotManager,
@@ -19,53 +18,40 @@ export function setupSocketEvents(
   const prevStates = new Map<string, string>();
   const prevInventory = new Map<string, string>();
 
-  // Poll bot state every 2 seconds and emit changes
+  // Poll cached bot state every 2 seconds and emit changes
   setInterval(() => {
-    const bots = botManager.getAllBots();
-    for (const bot of bots) {
-      if (!bot.bot) continue;
-      const name = bot.name;
+    const workers = botManager.getAllWorkers();
+    for (const handle of workers) {
+      const detailed = handle.getCachedDetailedStatus();
+      const status = handle.getCachedStatus();
+      if (!status) continue;
+      const name = handle.botName;
 
       // Position
-      try {
-        const pos = bot.bot.entity?.position;
-        if (pos) {
-          const posKey = `${Math.round(pos.x)},${Math.round(pos.y)},${Math.round(pos.z)}`;
-          if (prevPositions.get(name) !== posKey) {
-            prevPositions.set(name, posKey);
-            io.emit('bot:position', {
-              bot: name,
-              x: Math.round(pos.x),
-              y: Math.round(pos.y),
-              z: Math.round(pos.z),
-            });
-          }
+      const pos = status.position;
+      if (pos) {
+        const posKey = `${pos.x},${pos.y},${pos.z}`;
+        if (prevPositions.get(name) !== posKey) {
+          prevPositions.set(name, posKey);
+          io.emit('bot:position', { bot: name, ...pos });
         }
-      } catch { /* bot may be disconnected */ }
+      }
 
       // Health & food
-      try {
-        const healthKey = `${bot.bot.health}:${bot.bot.food}`;
+      if (detailed) {
+        const healthKey = `${detailed.health}:${detailed.food}`;
         if (prevHealth.get(name) !== healthKey) {
           prevHealth.set(name, healthKey);
-          io.emit('bot:health', {
-            bot: name,
-            health: bot.bot.health,
-            food: bot.bot.food,
-          });
+          io.emit('bot:health', { bot: name, health: detailed.health, food: detailed.food });
         }
-      } catch { /* ignore */ }
+      }
 
       // State
-      const stateKey = bot.state;
+      const stateKey = status.state;
       if (prevStates.get(name) !== stateKey) {
         const previousState = prevStates.get(name);
         prevStates.set(name, stateKey);
-        io.emit('bot:state', {
-          bot: name,
-          state: stateKey,
-          previousState: previousState ?? null,
-        });
+        io.emit('bot:state', { bot: name, state: stateKey, previousState: previousState ?? null });
 
         eventLog.push({
           type: 'bot:state',
@@ -75,44 +61,35 @@ export function setupSocketEvents(
         });
       }
 
-      // Inventory (check by stringified hash — only emit on actual change)
-      try {
-        const items = bot.bot.inventory.items();
-        const invKey = items.map((i) => `${i.name}:${i.count}`).sort().join(',');
+      // Inventory
+      if (detailed?.inventory) {
+        const invKey = detailed.inventory.map((i: any) => `${i.name}:${i.count}`).sort().join(',');
         if (prevInventory.get(name) !== invKey) {
           prevInventory.set(name, invKey);
-          io.emit('bot:inventory', {
-            bot: name,
-            items: items.map((i) => ({ name: i.name, count: i.count, slot: i.slot })),
-          });
+          io.emit('bot:inventory', { bot: name, items: detailed.inventory });
         }
-      } catch { /* ignore */ }
+      }
     }
   }, 2000);
 
   // World time broadcast every 30 seconds
   setInterval(() => {
-    const bots = botManager.getAllBots();
-    const connected = bots.find((b) => b.bot);
-    if (!connected?.bot) return;
-
-    const bot = connected.bot;
-    const timeOfDay = bot.time.timeOfDay < 6000 ? 'sunrise'
-      : bot.time.timeOfDay < 12000 ? 'day'
-      : bot.time.timeOfDay < 18000 ? 'sunset'
-      : 'night';
-
-    io.emit('world:time', {
-      timeOfDay,
-      timeOfDayTicks: bot.time.timeOfDay,
-      day: bot.time.day,
-      isRaining: bot.isRaining,
-    });
+    const workers = botManager.getAllWorkers();
+    for (const handle of workers) {
+      const detailed = handle.getCachedDetailedStatus();
+      if (detailed?.world) {
+        io.emit('world:time', {
+          timeOfDay: detailed.world.timeOfDay,
+          isRaining: detailed.world.isRaining,
+        });
+        return;
+      }
+    }
   }, 30000);
 
-  // Clean up tracked state when bots disconnect
+  // Clean up tracked state when bots are removed
   setInterval(() => {
-    const activeNames = new Set(botManager.getAllBots().map((b) => b.name));
+    const activeNames = new Set(botManager.getAllWorkers().map((w) => w.botName));
     for (const name of prevPositions.keys()) {
       if (!activeNames.has(name)) {
         prevPositions.delete(name);

@@ -139,12 +139,24 @@ export class BotInstance {
         this.bot.pathfinder.setMovements(movements);
         (this.bot.pathfinder as any).searchRadius = 64; // Cap A* search to prevent OOM on unreachable goals
         (this.bot.pathfinder as any).thinkTimeout = 2000; // Reduce from 5s default to limit node accumulation
-        logger.info({ bot: this.name, canDig: movements.canDig }, 'Pathfinder movements configured');
+        (this.bot.pathfinder as any).tickTimeout = 40; // Default — safe now that each bot has its own worker thread
+
+        // Override collectBlock's movements so it doesn't reset canDig=true on every collect() call
+        if ((this.bot as any).collectBlock) {
+          const cbMovements = new Movements(this.bot);
+          cbMovements.canDig = false;
+          (this.bot as any).collectBlock.movements = cbMovements;
+        }
+
+        logger.info({ bot: this.name, canDig: movements.canDig, tickTimeout: 40 }, 'Pathfinder movements configured');
 
         // Auto-dismount to prevent physicsTick from stopping (matches original Voyager)
-        this.bot.on('mount', () => {
+        // Use once + re-register pattern to avoid accumulating listeners on respawn
+        const onMount = () => {
           this.bot?.dismount();
-        });
+          this.bot?.once('mount', onMount);
+        };
+        this.bot.once('mount', onMount);
       }
 
       // Auth with DyoAuth, then select class, before doing anything else
@@ -503,8 +515,11 @@ export class BotInstance {
     }, this.config.behavior.wanderIntervalMs);
   }
 
+  private chatListenerBound = false;
+
   private startChatListener(): void {
-    if (!this.bot) return;
+    if (!this.bot || this.chatListenerBound) return;
+    this.chatListenerBound = true;
 
     this.bot.on('chat', async (username: string, message: string) => {
       // Ignore own messages and empty messages
@@ -633,13 +648,13 @@ export class BotInstance {
         this.affinityManager.onNegativeSentiment(this.name, playerName);
       }
 
-      const affinity = this.affinityManager.get(this.name, playerName);
+      const affinity = await this.affinityManager.get(this.name, playerName);
       const isCodegen = this.mode === BotMode.CODEGEN;
       const internalState = this.voyagerLoop?.getInternalState();
       const systemPrompt = buildSystemPrompt(this.name, this.personality, affinity, isCodegen, internalState);
 
       // Build conversation history (current message appended by buildContentsArray)
-      const contents = this.conversationManager.buildContentsArray(this.name, playerName, message);
+      const contents = await this.conversationManager.buildContentsArray(this.name, playerName, message);
 
       const response = await this.llmClient.chat(systemPrompt, contents, this.config.llm.chatMaxTokens);
 
