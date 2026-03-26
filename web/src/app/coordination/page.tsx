@@ -60,9 +60,13 @@ export default function CoordinationPage() {
   const [tasks, setTasks] = useState<BlackboardTask[]>([]);
   const [goals, setGoals] = useState<BlackboardGoal[]>([]);
   const [swarmGoal, setSwarmGoal] = useState<BlackboardGoal | null>(null);
+  const [reservations, setReservations] = useState<{ id: string; type: string; key: string; botName: string; createdAt: number }[]>([]);
   const [filter, setFilter] = useState('');
   const [kindFilter, setKindFilter] = useState('all');
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [swarmInput, setSwarmInput] = useState('');
+  const [swarmLoading, setSwarmLoading] = useState(false);
+  const [swarmFeedback, setSwarmFeedback] = useState<string | null>(null);
 
   useEffect(() => {
     const load = () => {
@@ -71,6 +75,7 @@ export default function CoordinationPage() {
         setTasks(data.blackboard.tasks);
         setGoals(data.blackboard.goals);
         setSwarmGoal(data.blackboard.swarmGoal);
+        setReservations(data.blackboard.reservations || []);
       }).catch(() => {});
     };
     load();
@@ -85,6 +90,18 @@ export default function CoordinationPage() {
     if (filter && !m.botName.toLowerCase().includes(filter.toLowerCase()) && !m.text.toLowerCase().includes(filter.toLowerCase())) return false;
     return true;
   });
+
+  const handleSendSwarm = async () => {
+    if (!swarmInput.trim()) return;
+    setSwarmLoading(true);
+    try {
+      await api.sendSwarmDirective(swarmInput.trim());
+      setSwarmFeedback('Directive sent');
+      setSwarmInput('');
+      setTimeout(() => setSwarmFeedback(null), 3000);
+    } catch { setSwarmFeedback('Failed to send directive'); }
+    setSwarmLoading(false);
+  };
 
   const activeTasks = tasks.filter((t) => t.status === 'claimed' || t.status === 'pending');
   const blockedTasks = tasks.filter((t) => t.status === 'blocked');
@@ -117,8 +134,30 @@ export default function CoordinationPage() {
         </div>
       )}
 
+      {/* Swarm Directive Input */}
+      <div className="bg-zinc-900/50 border border-zinc-800/40 rounded-xl px-4 py-3">
+        <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">Swarm Directive</h2>
+        <div className="flex gap-2">
+          <input
+            value={swarmInput}
+            onChange={(e) => setSwarmInput(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && swarmInput.trim() && handleSendSwarm()}
+            placeholder="Set a new swarm directive..."
+            className="flex-1 bg-zinc-800/80 border border-zinc-700/50 rounded-lg px-3 py-2 text-xs text-white placeholder-zinc-500"
+          />
+          <button
+            onClick={handleSendSwarm}
+            disabled={!swarmInput.trim() || swarmLoading}
+            className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-zinc-700 text-white px-4 py-2 rounded-lg text-xs font-medium transition-colors"
+          >
+            {swarmLoading ? 'Sending...' : 'Send'}
+          </button>
+        </div>
+        {swarmFeedback && <p className="text-xs text-emerald-400 mt-1.5">{swarmFeedback}</p>}
+      </div>
+
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <div className="bg-zinc-900/50 rounded-xl border border-zinc-800/40 px-4 py-3">
           <p className="text-[10px] text-zinc-500 uppercase tracking-wider">Active Tasks</p>
           <p className="text-lg font-bold text-white mt-1">{activeTasks.length}</p>
@@ -134,6 +173,10 @@ export default function CoordinationPage() {
         <div className="bg-zinc-900/50 rounded-xl border border-zinc-800/40 px-4 py-3">
           <p className="text-[10px] text-zinc-500 uppercase tracking-wider">Messages</p>
           <p className="text-lg font-bold text-white mt-1">{messages.length}</p>
+        </div>
+        <div className="bg-zinc-900/50 rounded-xl border border-zinc-800/40 px-4 py-3">
+          <p className="text-[10px] text-zinc-500 uppercase tracking-wider">Reservations</p>
+          <p className="text-lg font-bold text-white mt-1">{reservations.length}</p>
         </div>
       </div>
 
@@ -242,6 +285,23 @@ export default function CoordinationPage() {
                   <span className="text-[10px] text-zinc-600 ml-auto">{formatTimeAgo(event.timestamp)}</span>
                 </div>
                 <p className="text-xs text-zinc-400 mt-1">{event.description}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {reservations.length > 0 && (
+        <div className="bg-zinc-900/50 rounded-xl border border-zinc-800/40 overflow-hidden">
+          <div className="px-4 py-3 border-b border-zinc-800/30">
+            <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Reservations</h2>
+          </div>
+          <div className="divide-y divide-zinc-800/30">
+            {reservations.map((res) => (
+              <div key={res.id} className="px-4 py-3 flex items-center gap-3">
+                <span className="text-sm text-white font-semibold">{res.botName}</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded font-medium text-amber-400 bg-amber-500/10">{res.type}</span>
+                <span className="text-xs text-zinc-400 flex-1 truncate">{res.key}</span>
+                <span className="text-[10px] text-zinc-600 shrink-0">{formatTimeAgo(res.createdAt)}</span>
               </div>
             ))}
           </div>

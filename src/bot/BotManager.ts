@@ -28,6 +28,7 @@ export class BotManager {
   private socialMemory: SocialMemory;
   private botComms: BotComms;
   private blackboardManager: BlackboardManager;
+  private watchdogInterval: NodeJS.Timeout | null = null;
 
   constructor(config: Config, llmClient: LLMClient | null) {
     this.config = config;
@@ -207,6 +208,34 @@ export class BotManager {
     instance.setMode(mode === 'codegen' ? BotMode.CODEGEN : BotMode.PRIMITIVE);
     this.saveBots();
     return true;
+  }
+
+  /** Start a watchdog that reconnects disconnected bots every 60 seconds. */
+  startWatchdog(): void {
+    if (this.watchdogInterval) return;
+    this.watchdogInterval = setInterval(() => this.watchdogTick(), 60_000);
+    logger.info('Bot watchdog started (60s interval)');
+  }
+
+  stopWatchdog(): void {
+    if (this.watchdogInterval) {
+      clearInterval(this.watchdogInterval);
+      this.watchdogInterval = null;
+    }
+  }
+
+  private watchdogTick(): void {
+    for (const bot of this.bots.values()) {
+      if (bot.state !== 'DISCONNECTED') continue;
+      if (bot.isDestroyed()) {
+        logger.info({ bot: bot.name }, 'Watchdog: reviving destroyed bot');
+        bot.resetReconnect();
+      } else {
+        logger.info({ bot: bot.name }, 'Watchdog: reconnecting disconnected bot');
+        bot.resetReconnect();
+      }
+      void bot.connect();
+    }
   }
 
   private saveBots(): void {

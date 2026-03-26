@@ -590,6 +590,16 @@ export class BotInstance extends EventEmitter {
     }, 10000);
   }
 
+  /** Reset reconnect state so the bot can be reconnected by the watchdog. */
+  resetReconnect(): void {
+    this.reconnectAttempts = 0;
+    this.destroyed = false;
+  }
+
+  isDestroyed(): boolean {
+    return this.destroyed;
+  }
+
   private scheduleReconnect(): void {
     if (this.destroyed) return;
     if (this.reconnectTimer) return; // Already scheduled

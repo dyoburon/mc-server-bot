@@ -450,7 +450,17 @@ export const api = {
   getBotDetailed: (name: string) => fetchJSON<{ bot: BotDetailed }>(`/api/bots/${name}/detailed`),
   getBotRelationships: (name: string) => fetchJSON<{ relationships: Record<string, number> }>(`/api/bots/${name}/relationships`),
   getBotConversations: (name: string) => fetchJSON<{ conversations: Record<string, ChatMessage[]> }>(`/api/bots/${name}/conversations`),
-  getBotTasks: (name: string) => fetchJSON<{ currentTask: string | null; completedTasks: string[]; failedTasks: string[] }>(`/api/bots/${name}/tasks`),
+  getBotTasks: (name: string) => fetchJSON<{
+    currentTask: string | null;
+    queuedTasks: string[];
+    longTermGoal: {
+      id: string; requestedBy: string; rawRequest: string; kind: string; status: string;
+      buildState: string | null; pendingSubtasks: string[]; completedSubtasks: string[];
+      updatedAt: number;
+    } | null;
+    completedTasks: string[];
+    failedTasks: string[];
+  }>(`/api/bots/${name}/tasks`),
   getBotMissions: (name: string) => fetchJSON<{ missions: { id: string; title: string; type: string; priority: number; status: string; createdAt: number }[] }>(`/api/bots/${name}/missions`),
 
   // Create / delete
@@ -665,8 +675,15 @@ export const api = {
       goals: { id: string; rawRequest: string; requestedBy: string; scope: string; botName?: string; status: string; createdAt: number; updatedAt: number }[];
       tasks: { id: string; description: string; keywords: string[]; status: string; assignedBot?: string; source: string; goalId?: string; blocker?: string; createdAt: number; updatedAt: number }[];
       messages: { id: string; botName: string; kind: string; text: string; createdAt: number }[];
+      reservations: { id: string; type: string; key: string; botName: string; goalId?: string; createdAt: number; expiresAt?: number }[];
     };
   }>('/api/blackboard'),
+
+  sendSwarmDirective: (description: string, requestedBy = 'dashboard') =>
+    fetchJSON<{ success: boolean }>('/api/swarm', {
+      method: 'POST',
+      body: JSON.stringify({ description, requestedBy }),
+    }),
 
   // Commander
   parseCommanderInput: (input: string) =>

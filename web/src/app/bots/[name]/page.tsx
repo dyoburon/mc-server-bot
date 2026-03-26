@@ -30,6 +30,10 @@ export default function BotProfilePage() {
   const [showCompleted, setShowCompleted] = useState(false);
   const [showFailed, setShowFailed] = useState(false);
   const [roleAssignment, setRoleAssignment] = useState<RoleAssignmentRecord | null>(null);
+  const [longTermGoal, setLongTermGoal] = useState<{
+    rawRequest: string; kind: string; status: string;
+    buildState: string | null; pendingSubtasks: string[];
+  } | null>(null);
 
   useEffect(() => {
     const load = () => {
@@ -40,6 +44,7 @@ export default function BotProfilePage() {
         const match = data.assignments.find((a) => a.botName === name);
         setRoleAssignment(match || null);
       }).catch(() => {});
+      api.getBotTasks(name).then((data) => setLongTermGoal(data.longTermGoal ?? null)).catch(() => {});
     };
     load();
     const interval = setInterval(load, 5000);
@@ -191,6 +196,33 @@ export default function BotProfilePage() {
             health={bot.health}
             accentColor={accentColor}
           />
+
+          {/* Long-Term Goal */}
+          {longTermGoal && (
+            <Section title="Long-Term Goal">
+              <div className="space-y-2">
+                <DiagRow label="Goal" value={longTermGoal.rawRequest} color="#D4D4D8" truncate />
+                <DiagRow label="Kind" value={longTermGoal.kind} color="#8B5CF6" />
+                <DiagRow label="Status" value={longTermGoal.status}
+                  color={longTermGoal.status === 'active' ? '#10B981' : longTermGoal.status === 'blocked' ? '#EF4444' : '#6B7280'} />
+                {longTermGoal.buildState && (
+                  <DiagRow label="Build State" value={longTermGoal.buildState} color="#3B82F6" />
+                )}
+                {longTermGoal.pendingSubtasks.length > 0 && (
+                  <div className="pt-2">
+                    <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-1.5">Pending Subtasks</p>
+                    <div className="flex flex-wrap gap-1">
+                      {longTermGoal.pendingSubtasks.slice(0, 8).map((task, i) => (
+                        <span key={i} className="text-[10px] px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700/50">
+                          {task}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </Section>
+          )}
 
           {/* Command Center */}
           <BotCommandCenter

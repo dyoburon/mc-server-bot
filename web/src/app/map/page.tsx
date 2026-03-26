@@ -1308,7 +1308,7 @@ export default function MapPage() {
                 {missions.filter((mission) => ['queued', 'running', 'paused'].includes(mission.status)).slice(0, 8).map((mission) => (
                   <div key={mission.id} className="px-2 py-1.5 rounded-md bg-zinc-900/60 border border-zinc-800/50">
                     <p className="text-[11px] text-zinc-300 truncate">{mission.title}</p>
-                    <p className="text-[9px] text-zinc-600 truncate">{mission.assigneeIds.join(', ')} - {mission.source}</p>
+                    <p className="text-[9px] text-zinc-600 truncate">{(mission.assigneeIds ?? []).join(', ')} - {mission.source}</p>
                   </div>
                 ))}
               </div>

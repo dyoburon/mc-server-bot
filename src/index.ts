@@ -136,6 +136,9 @@ async function main() {
 
   startMemoryDiagnostics();
 
+  // Start watchdog to auto-reconnect disconnected bots every 60s
+  botManager.startWatchdog();
+
   httpServer.listen(config.api.port, config.api.host, () => {
     logger.info({ port: config.api.port, host: config.api.host }, 'DyoBot API server running (HTTP + WebSocket)');
   });
@@ -147,6 +150,7 @@ async function main() {
       clearInterval(memoryInterval);
       memoryInterval = null;
     }
+    botManager.stopWatchdog();
     // Flush all debounced file writes before tearing down bots
     botManager.shutdownPersistence();
     markerStore.shutdown();

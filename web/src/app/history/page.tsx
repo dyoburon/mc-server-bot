@@ -60,7 +60,7 @@ function formatTimestamp(timestamp: number): string {
 }
 
 function commandTypeLabel(type: string): string {
-  return type.replace(/_/g, ' ');
+  return (type ?? '').replace(/_/g, ' ');
 }
 
 function missionStatusFilterValue(status: string): StatusFilter {
@@ -113,8 +113,8 @@ export default function HistoryPage() {
     return () => clearInterval(interval);
   }, [fetchData]);
 
-  const commandTypes = Array.from(new Set(commands.map((command) => command.type)));
-  const missionTypes = Array.from(new Set(missions.map((mission) => mission.type)));
+  const commandTypes = Array.from(new Set(commands.map((command) => command.type).filter(Boolean)));
+  const missionTypes = Array.from(new Set(missions.map((mission) => mission.type).filter(Boolean)));
 
   const filteredCommands = commands.filter((command) => {
     if (botFilter !== 'all' && !command.targets.some((target) => target.toLowerCase() === botFilter.toLowerCase())) return false;

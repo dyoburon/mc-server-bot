@@ -51,6 +51,8 @@ export function BotCommandCenter({ botName, state, voyagerPaused, voyagerRunning
   const [showFollowInput, setShowFollowInput] = useState(false);
   const [showMarkerInput, setShowMarkerInput] = useState(false);
   const [showZoneInput, setShowZoneInput] = useState(false);
+  const [showTaskInput, setShowTaskInput] = useState(false);
+  const [taskDesc, setTaskDesc] = useState('');
   const [feedback, setFeedback] = useState<{ msg: string; ok: boolean } | null>(null);
   const [lastCommandId, setLastCommandId] = useState<string | null>(null);
   const players = useBotStore((s) => s.playerList).filter((p) => p.isOnline);
@@ -136,6 +138,23 @@ export function BotCommandCenter({ botName, state, voyagerPaused, voyagerRunning
     );
     setFollowTarget('');
     setShowFollowInput(false);
+  };
+
+  const handleQueueTask = async () => {
+    if (!taskDesc.trim()) return;
+    setLoading('Queue Task');
+    setFeedback(null);
+    try {
+      await api.queueTask(botName, taskDesc.trim());
+      setFeedback({ msg: 'Task queued', ok: true });
+      setTaskDesc('');
+      setShowTaskInput(false);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed';
+      setFeedback({ msg, ok: false });
+    }
+    setLoading(null);
+    setTimeout(() => setFeedback(null), 4000);
   };
 
   const isDisconnected = state === 'DISCONNECTED';
@@ -269,6 +288,21 @@ export function BotCommandCenter({ botName, state, voyagerPaused, voyagerRunning
           disabled={isDisconnected}
           onClick={() => execCommand('Unstuck', 'unstuck')}
         />
+        <CmdButton
+          label="Queue Task"
+          icon="T"
+          color="#A78BFA"
+          loading={loading === 'Queue Task'}
+          disabled={isDisconnected || !isCodegen}
+          onClick={() => {
+            setShowTaskInput(!showTaskInput);
+            setShowWalkInput(false);
+            setShowFollowInput(false);
+            setShowMarkerInput(false);
+            setShowZoneInput(false);
+          }}
+          active={showTaskInput}
+        />
       </div>
 
       {/* Follow input */}
@@ -388,6 +422,34 @@ export function BotCommandCenter({ botName, state, voyagerPaused, voyagerRunning
             </button>
           </div>
           <p className="text-[9px] text-zinc-600 mt-1">Enter coordinates separated by commas or spaces</p>
+        </motion.div>
+      )}
+
+      {/* Queue task input */}
+      {showTaskInput && (
+        <motion.div
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: 'auto', opacity: 1 }}
+          className="overflow-hidden mb-2"
+        >
+          <div className="flex gap-2">
+            <input
+              value={taskDesc}
+              onChange={(e) => setTaskDesc(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && taskDesc.trim() && handleQueueTask()}
+              placeholder="Describe a task to queue..."
+              className="flex-1 bg-zinc-800/80 border border-zinc-700/50 rounded-lg px-3 py-1.5 text-xs text-white placeholder-zinc-600"
+              autoFocus
+            />
+            <button
+              onClick={handleQueueTask}
+              disabled={!taskDesc.trim()}
+              className="bg-violet-600 hover:bg-violet-500 disabled:bg-zinc-700 text-white px-3 py-1.5 rounded-lg text-xs transition-colors"
+            >
+              Queue
+            </button>
+          </div>
+          <p className="text-[9px] text-zinc-600 mt-1">Task will be added to the voyager queue</p>
         </motion.div>
       )}
 
